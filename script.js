@@ -78,11 +78,12 @@ const DOM = {
   installAppBtn: document.getElementById('installAppBtn'),
   greetingContainer: document.querySelector('.greeting-container'),
   greetingDisplay: document.getElementById('greetingDisplay'),
-  greetingText: document.getElementById('greetingText'),
-  editGreetingBtn: document.getElementById('editGreetingBtn'),
-  greetingEditForm: document.getElementById('greetingEditForm'),
+  greetingPrefix: document.getElementById('greetingPrefix'),
+  greetingNameDisplay: document.getElementById('greetingNameDisplay'),
   greetingNameInput: document.getElementById('greetingNameInput'),
-  cancelGreetingBtn: document.getElementById('cancelGreetingBtn'),
+  greetingSuffix: document.getElementById('greetingSuffix'),
+  editGreetingBtn: document.getElementById('editGreetingBtn'),
+  greetingHint: document.getElementById('greetingHint'),
   currentDateStr: document.getElementById('currentDateStr'),
 
   // Stats Counters
@@ -229,6 +230,18 @@ function saveTasksToStorage() {
 }
 
 /**
+ * Check if a custom name has been saved in LocalStorage.
+ */
+function hasSavedUserName() {
+  try {
+    const val = localStorage.getItem(STORAGE_KEYS.USER_NAME);
+    return val !== null && val.trim().length > 0;
+  } catch (err) {
+    return false;
+  }
+}
+
+/**
  * Read custom student name or default to 'Student'.
  */
 function getUserName() {
@@ -318,17 +331,68 @@ function formatTodayDate() {
 }
 
 /**
- * Calculate dynamic greeting with user's custom name based on time of day.
+ * Return greeting prefix and suffix by time bracket based on local time.
+ * 05:00 - 11:59: Good morning
+ * 12:00 - 16:59: Good afternoon
+ * 17:00 - 20:59: Good evening
+ * 21:00 - 04:59: Good night
+ */
+function getTimeGreetingData() {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) {
+    return {
+      prefix: 'Good morning, ',
+      suffix: '! ☀️ Ready to study?'
+    };
+  }
+  if (hour >= 12 && hour < 17) {
+    return {
+      prefix: 'Good afternoon, ',
+      suffix: '! 📖 Keep the momentum going!'
+    };
+  }
+  if (hour >= 17 && hour < 21) {
+    return {
+      prefix: 'Good evening, ',
+      suffix: '! 🌙 Wrap up your assignments!'
+    };
+  }
+  return {
+    prefix: 'Good night, ',
+    suffix: '! 🌌 Rest well and recharge!'
+  };
+}
+
+/**
+ * Calculate full dynamic greeting with user's custom name based on time of day.
  */
 function getGreeting() {
-  const hour = new Date().getHours();
+  const data = getTimeGreetingData();
   const name = getUserName();
-  let timeGreeting = 'Good day';
-  if (hour < 12) timeGreeting = 'Good morning';
-  else if (hour < 17) timeGreeting = 'Good afternoon';
-  else timeGreeting = 'Good evening';
+  return `${data.prefix}${name}${data.suffix}`;
+}
 
-  return `${timeGreeting}, ${name}!`;
+/**
+ * Update the header greeting text elements and first-visit hint.
+ */
+function updateGreetingDisplay() {
+  const data = getTimeGreetingData();
+  const currentName = getUserName();
+
+  if (DOM.greetingPrefix) {
+    DOM.greetingPrefix.textContent = data.prefix;
+  }
+  if (DOM.greetingNameDisplay && (!DOM.greetingNameInput || DOM.greetingNameInput.hidden)) {
+    DOM.greetingNameDisplay.textContent = currentName;
+  }
+  if (DOM.greetingSuffix) {
+    DOM.greetingSuffix.textContent = data.suffix;
+  }
+
+  // Subtle hint shown on first visit with no saved name, dismissed once saved
+  if (DOM.greetingHint) {
+    DOM.greetingHint.hidden = hasSavedUserName();
+  }
 }
 
 /**
@@ -642,7 +706,7 @@ function updateCustomSubjectsDatalist() {
  */
 function render() {
   // 1. Update Header Greeting and Current Date
-  DOM.greetingText.textContent = getGreeting();
+  updateGreetingDisplay();
   DOM.currentDateStr.textContent = formatTodayDate();
 
   // 2. Compute live statistics
@@ -1455,37 +1519,44 @@ function handleImportTasks(e) {
   reader.readAsText(file);
 }
 
+let isCancellingName = false;
+
 /**
  * Start editing custom student name in header.
+ * Replaces the name text with the inline input, auto-focused and selected.
  */
 function handleStartEditGreeting() {
-  DOM.greetingDisplay.hidden = true;
-  DOM.greetingEditForm.hidden = false;
+  if (!DOM.greetingNameInput || !DOM.greetingNameDisplay) return;
+  DOM.greetingNameDisplay.hidden = true;
+  DOM.greetingNameInput.hidden = false;
   DOM.greetingNameInput.value = getUserName();
   DOM.greetingNameInput.focus();
   DOM.greetingNameInput.select();
 }
 
 /**
- * Save edited student name.
+ * Save edited student name from inline input.
+ * Trims value, falls back to 'Student' if empty, saves to LocalStorage, updates display.
  */
-function handleSaveGreeting(e) {
-  if (e) e.preventDefault();
-  const rawName = DOM.greetingNameInput.value.trim();
+function handleSaveGreeting() {
+  if (!DOM.greetingNameInput || DOM.greetingNameInput.hidden) return;
+  const rawName = DOM.greetingNameInput.value.trim().replace(/\s+/g, ' ');
   const saved = saveUserName(rawName || 'Student');
 
-  DOM.greetingEditForm.hidden = true;
-  DOM.greetingDisplay.hidden = false;
-  DOM.greetingText.textContent = getGreeting();
+  DOM.greetingNameInput.hidden = true;
+  DOM.greetingNameDisplay.hidden = false;
+  updateGreetingDisplay();
   showToast(`Name updated to "${escapeHTML(saved)}"! 👋`, 'success');
 }
 
 /**
- * Cancel editing student name.
+ * Cancel editing student name without saving changes.
  */
 function handleCancelGreeting() {
-  DOM.greetingEditForm.hidden = true;
-  DOM.greetingDisplay.hidden = false;
+  if (!DOM.greetingNameInput || !DOM.greetingNameDisplay) return;
+  DOM.greetingNameInput.hidden = true;
+  DOM.greetingNameDisplay.hidden = false;
+  DOM.greetingNameDisplay.textContent = getUserName();
 }
 
 /* ==========================================================================
@@ -1499,11 +1570,40 @@ function bindEventListeners() {
   // Theme Toggle
   DOM.themeToggleBtn.addEventListener('click', handleThemeToggle);
 
-  // Editable Greeting
-  if (DOM.editGreetingBtn) DOM.editGreetingBtn.addEventListener('click', handleStartEditGreeting);
-  if (DOM.greetingText) DOM.greetingText.addEventListener('click', handleStartEditGreeting);
-  if (DOM.greetingEditForm) DOM.greetingEditForm.addEventListener('submit', handleSaveGreeting);
-  if (DOM.cancelGreetingBtn) DOM.cancelGreetingBtn.addEventListener('click', handleCancelGreeting);
+  // Editable Greeting Name
+  if (DOM.editGreetingBtn) {
+    DOM.editGreetingBtn.addEventListener('click', handleStartEditGreeting);
+  }
+  if (DOM.greetingNameDisplay) {
+    DOM.greetingNameDisplay.addEventListener('click', handleStartEditGreeting);
+    DOM.greetingNameDisplay.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handleStartEditGreeting();
+      }
+    });
+  }
+  if (DOM.greetingNameInput) {
+    DOM.greetingNameInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleSaveGreeting();
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        isCancellingName = true;
+        handleCancelGreeting();
+        setTimeout(() => {
+          isCancellingName = false;
+        }, 100);
+      }
+    });
+
+    DOM.greetingNameInput.addEventListener('blur', () => {
+      if (!isCancellingName && !DOM.greetingNameInput.hidden) {
+        handleSaveGreeting();
+      }
+    });
+  }
 
   // Add Task Form submission
   DOM.taskForm.addEventListener('submit', handleAddTask);
@@ -1585,9 +1685,13 @@ function bindEventListeners() {
 
   // Global Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
-    // Escape in greeting edit cancels it
-    if (e.key === 'Escape' && DOM.greetingEditForm && !DOM.greetingEditForm.hidden) {
+    // Escape in greeting name input cancels it
+    if (e.key === 'Escape' && DOM.greetingNameInput && !DOM.greetingNameInput.hidden) {
+      isCancellingName = true;
       handleCancelGreeting();
+      setTimeout(() => {
+        isCancellingName = false;
+      }, 100);
       return;
     }
 
@@ -1720,13 +1824,9 @@ function init() {
   if (window.innerWidth > 768) {
     DOM.taskTitleInput.focus();
   }
-}
 
-// Start the app when DOM is ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
-} else {
-  init();
+  // 8. Refresh greeting every 60 seconds to reflect time-of-day changes
+  setInterval(updateGreetingDisplay, 60000);
 }
 
 // Start the app when DOM is ready
