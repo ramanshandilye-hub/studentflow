@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="StudentFlow — A clean, focused, and offline-ready task manager designed specifically for students.">
+  <title>StudentFlow — Student Task Manager</title>
+  
+  <!-- PWA & Mobile Web App Meta -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#4f46e5">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="StudentFlow">
+  <link rel="apple-touch-icon" href="icon.svg">
+
+  <!-- Embedded SVG Favicon (No external requests, works 100% offline) -->
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Accessibility Skip Link -->
+  <a href="#mainContent" class="skip-link">Skip to main content</a>
+
+  <div class="app-wrapper">
+    <!-- Top Application Header -->
+    <header class="app-header">
+      <div class="header-container">
+        <div class="brand-group">
+          <div class="brand-icon-wrapper" aria-hidden="true">
+            <!-- Graduation Cap + Checkmark Icon -->
+            <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 10v6M2 10l10-5 10 5-10 5z"/>
+              <path d="M6 12v5c3 3 9 3 12 0v-5"/>
+            </svg>
+          </div>
+          <div class="brand-text">
+            <div class="brand-title-row">
+              <h1 class="brand-title">StudentFlow</h1>
+              <span class="brand-badge">Academic Planner</span>
+            </div>
+            <p id="greetingText" class="header-greeting" aria-live="polite">Good day, Student!</p>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <div class="date-chip" id="headerDateDisplay" aria-label="Today's Date">
+            <svg class="chip-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            <span id="currentDateStr">Today</span>
+          </div>
+
+          <!-- Install App Button (PWA, shown when browser supports installation) -->
+          <button id="installAppBtn" class="btn btn-secondary install-app-btn" type="button" aria-label="Install StudentFlow as an application" title="Install as Web App" hidden>
+            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            <span class="install-btn-text">Install App</span>
+          </button>
+
+          <!-- Dark / Light Theme Toggle Button -->
+          <button id="themeToggleBtn" class="theme-toggle-btn" type="button" aria-label="Switch between dark and light mode" title="Toggle Theme (Dark / Light)">
+            <!-- Sun Icon (Shown in Dark Mode) -->
+            <svg class="theme-icon sun-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="5"/>
+              <line x1="12" y1="1" x2="12" y2="3"/>
+              <line x1="12" y1="21" x2="12" y2="23"/>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+              <line x1="1" y1="12" x2="3" y2="12"/>
+              <line x1="21" y1="12" x2="23" y2="12"/>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </svg>
+            <!-- Moon Icon (Shown in Light Mode) -->
+            <svg class="theme-icon moon-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Dashboard Container -->
+    <main id="mainContent" class="main-container">
+      
+      <!-- Stats Metrics Row -->
+      <section class="stats-section" aria-label="Task Statistics">
+        <!-- Total Tasks Card -->
+        <div class="stat-card">
+          <div class="stat-icon-wrapper total-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M9 11l3 3L22 4"/>
+              <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+            </svg>
+          </div>
+          <div class="stat-content">
+            <span class="stat-label">Total Tasks</span>
+            <span id="statTotal" class="stat-value" aria-live="polite">0</span>
+          </div>
+        </div>
+
+        <!-- Pending Tasks Card -->
+        <div class="stat-card">
+          <div class="stat-icon-wrapper pending-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </div>
+          <div class="stat-content">
+            <span class="stat-label">Pending</span>
+            <span id="statPending" class="stat-value" aria-live="polite">0</span>
+          </div>
+        </div>
+
+        <!-- Completed Tasks Card -->
+        <div class="stat-card">
+          <div class="stat-icon-wrapper completed-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+          </div>
+          <div class="stat-content">
+            <span class="stat-label">Completed</span>
+            <span id="statCompleted" class="stat-value" aria-live="polite">0</span>
+          </div>
+        </div>
+
+        <!-- Completion Percentage Card -->
+        <div class="stat-card">
+          <div class="stat-icon-wrapper progress-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="18" y1="20" x2="18" y2="10"/>
+              <line x1="12" y1="20" x2="12" y2="4"/>
+              <line x1="6" y1="20" x2="6" y2="14"/>
+            </svg>
+          </div>
+          <div class="stat-content">
+            <span class="stat-label">Progress</span>
+            <span id="statPercentage" class="stat-value" aria-live="polite">0%</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Task Input Panel Card -->
+      <section class="card panel-card" aria-labelledby="addTaskHeading">
+        <div class="card-header">
+          <div class="card-title-group">
+            <svg class="section-header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="16"/>
+              <line x1="8" y1="12" x2="16" y2="12"/>
+            </svg>
+            <h2 id="addTaskHeading" class="card-title">Add New Task</h2>
+          </div>
+          <span class="card-subtitle">Organize your assignments, readings, and projects</span>
+        </div>
+
+        <!-- New Task Form -->
+        <form id="taskForm" class="task-form" novalidate>
+          <!-- Task Title Input Row -->
+          <div class="form-row title-row">
+            <div class="input-field-group title-field-group">
+              <label for="taskTitleInput" class="input-label">
+                Task Title <span class="required-star" aria-hidden="true">*</span>
+              </label>
+              <div class="input-with-icon">
+                <input
+                  type="text"
+                  id="taskTitleInput"
+                  class="text-input"
+                  placeholder="e.g. Complete Calculus Problem Set 4..."
+                  autocomplete="off"
+                  maxlength="150"
+                  aria-describedby="titleErrorMsg"
+                >
+              </div>
+            </div>
+
+            <!-- Submit Button (inline on desktop, full width on mobile) -->
+            <button type="submit" id="addTaskBtn" class="btn btn-primary add-btn">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+              </svg>
+              <span>Add Task</span>
+            </button>
+          </div>
+
+          <!-- Inline Error Validation Message -->
+          <div id="titleErrorMsg" class="form-error-banner" role="alert" aria-live="polite" hidden>
+            <svg class="error-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span id="titleErrorText">Please enter a task title.</span>
+          </div>
+
+          <!-- Secondary Options Row: Subject, Priority, Due Date -->
+          <div class="form-row options-row">
+            <!-- Subject / Category Select -->
+            <div class="input-field-group">
+              <label for="taskCategorySelect" class="input-label">Subject / Category</label>
+              <div class="select-wrapper">
+                <select id="taskCategorySelect" class="select-input">
+                  <option value="math">📐 Mathematics</option>
+                  <option value="science">🔬 Science</option>
+                  <option value="english">📚 English / Lit</option>
+                  <option value="history">🏛️ History</option>
+                  <option value="coding">💻 Coding / CS</option>
+                  <option value="other" selected>📝 General / Other</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Priority Select -->
+            <div class="input-field-group">
+              <label for="taskPrioritySelect" class="input-label">Priority Level</label>
+              <div class="select-wrapper">
+                <select id="taskPrioritySelect" class="select-input">
+                  <option value="low">🟢 Low Priority</option>
+                  <option value="medium" selected>🟡 Medium Priority</option>
+                  <option value="high">🔴 High Priority</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Due Date Picker -->
+            <div class="input-field-group">
+              <label for="taskDueDateInput" class="input-label">Due Date (Optional)</label>
+              <div class="date-input-wrapper">
+                <input type="date" id="taskDueDateInput" class="text-input date-input">
+              </div>
+            </div>
+          </div>
+        </form>
+      </section>
+
+      <!-- Task Management & Task List Section -->
+      <section class="card task-list-card" aria-labelledby="taskListHeading">
+        
+        <!-- Overall Progress Header -->
+        <div class="list-progress-banner">
+          <div class="progress-info">
+            <span class="progress-title" id="taskListHeading">Current Assignments</span>
+            <span id="progressSummaryText" class="progress-summary">0 of 0 completed</span>
+          </div>
+          <div class="progress-bar-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="progressBarTrack" aria-label="Task completion progress">
+            <div id="progressBarFill" class="progress-bar-fill" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- Filter, Search, and Sort Toolbar -->
+        <div class="toolbar" role="region" aria-label="Task Filters and Sorting Controls">
+          
+          <!-- Search Bar -->
+          <div class="search-box-wrapper">
+            <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+            <input
+              type="text"
+              id="searchInput"
+              class="search-input"
+              placeholder="Search tasks by title..."
+              autocomplete="off"
+              aria-label="Search tasks by title"
+            >
+            <button type="button" id="searchClearBtn" class="search-clear-btn" aria-label="Clear search query" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+
+          <!-- Filter Pills (All / Pending / Completed) -->
+          <div class="filter-pills-group" role="tablist" aria-label="Status Filters">
+            <button type="button" class="filter-pill active" data-filter="all" role="tab" aria-selected="true" id="filterBtnAll">
+              <span>All</span>
+              <span id="filterCountAll" class="pill-counter">0</span>
+            </button>
+            <button type="button" class="filter-pill" data-filter="pending" role="tab" aria-selected="false" id="filterBtnPending">
+              <span>Pending</span>
+              <span id="filterCountPending" class="pill-counter">0</span>
+            </button>
+            <button type="button" class="filter-pill" data-filter="completed" role="tab" aria-selected="false" id="filterBtnCompleted">
+              <span>Completed</span>
+              <span id="filterCountCompleted" class="pill-counter">0</span>
+            </button>
+          </div>
+
+          <!-- Secondary Filter Controls: Subject Filter, Sort, Clear Completed -->
+          <div class="toolbar-controls-row">
+            <!-- Category Filter Dropdown -->
+            <div class="toolbar-select-group">
+              <label for="categoryFilterSelect" class="visually-hidden">Filter by Category</label>
+              <div class="select-wrapper compact">
+                <select id="categoryFilterSelect" class="select-input compact-select" aria-label="Filter by subject category">
+                  <option value="all">All Subjects</option>
+                  <option value="math">📐 Mathematics</option>
+                  <option value="science">🔬 Science</option>
+                  <option value="english">📚 English / Lit</option>
+                  <option value="history">🏛️ History</option>
+                  <option value="coding">💻 Coding / CS</option>
+                  <option value="other">📝 Other</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Sort By Dropdown -->
+            <div class="toolbar-select-group">
+              <label for="sortSelect" class="visually-hidden">Sort tasks</label>
+              <div class="select-wrapper compact">
+                <select id="sortSelect" class="select-input compact-select" aria-label="Sort tasks">
+                  <option value="newest">🕒 Sort: Newest</option>
+                  <option value="due-date">📅 Sort: Due Date</option>
+                  <option value="priority">⚡ Sort: Priority (High to Low)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Clear Completed Tasks Button -->
+            <button type="button" id="clearCompletedBtn" class="btn btn-secondary clear-completed-btn" aria-label="Clear all completed tasks" disabled>
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              </svg>
+              <span>Clear Completed</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Task List Container -->
+        <ul id="taskList" class="task-list" aria-label="Task items list">
+          <!-- Dynamically populated by script.js -->
+        </ul>
+
+        <!-- Friendly Empty States Container -->
+        <div id="emptyState" class="empty-state-card" hidden>
+          <div id="emptyStateIconWrapper" class="empty-state-icon">
+            <!-- Icon injected based on filter -->
+          </div>
+          <h3 id="emptyStateHeading" class="empty-state-heading">No tasks found</h3>
+          <p id="emptyStateMessage" class="empty-state-message">Add a task using the form above to get started!</p>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- Confirmation Modal Dialog (Accessible) -->
+    <div id="confirmModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modalDialogTitle" aria-describedby="modalDialogDesc" hidden>
+      <div class="modal-backdrop" id="modalBackdrop"></div>
+      <div class="modal-dialog-card">
+        <div class="modal-icon-header warning-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </div>
+        <div class="modal-body">
+          <h3 id="modalDialogTitle" class="modal-title">Clear Completed Tasks?</h3>
+          <p id="modalDialogDesc" class="modal-description">
+            Are you sure you want to remove all completed tasks? This cannot be undone once confirmed.
+          </p>
+        </div>
+        <div class="modal-actions">
+          <button type="button" id="modalCancelBtn" class="btn btn-secondary">Cancel</button>
+          <button type="button" id="modalConfirmBtn" class="btn btn-danger">Clear Completed</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live Toast Notification Container -->
+    <div id="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true">
+      <!-- Toasts dynamically appended by script.js -->
+    </div>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <p>StudentFlow &bull; Offline-First Student Task Manager &bull; Built with Vanilla HTML, CSS &amp; JavaScript</p>
+    </footer>
+  </div>
+
+  <!-- Application Logic -->
+  <script src="script.js"></script>
+</body>
+</html>

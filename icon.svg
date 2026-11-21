@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="gradBg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#6366f1"/>
+      <stop offset="100%" stop-color="#4338ca"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- App Icon Background (Rounded Squircle) -->
+  <rect x="24" y="24" width="464" height="464" rx="108" fill="url(#gradBg)"/>
+
+  <!-- Inner Subtle Glow Ring -->
+  <rect x="36" y="36" width="440" height="440" rx="96" fill="none" stroke="#ffffff" stroke-width="4" stroke-opacity="0.15"/>
+
+  <!-- Academic Graduation Cap Graphic -->
+  <g filter="url(#shadow)" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Cap Diamond / Board -->
+    <path d="M256 120 L432 208 L256 296 L80 208 Z" fill="#ffffff" stroke="#ffffff" stroke-width="12"/>
+
+    <!-- Skull Cap Base -->
+    <path d="M152 248 V332 C152 384 360 384 360 332 V248" fill="none" stroke="#ffffff" stroke-width="20"/>
+
+    <!-- Tassel String and Hanging Knot -->
+    <path d="M400 224 V344" fill="none" stroke="#fcd34d" stroke-width="14"/>
+    <circle cx="400" cy="356" r="14" fill="#fcd34d"/>
+  </g>
+
+  <!-- Checkmark Badge Overlaid on Bottom Right -->
+  <g filter="url(#shadow)">
+    <circle cx="360" cy="360" r="70" fill="#22c55e" stroke="#ffffff" stroke-width="10"/>
+    <polyline points="332,360 352,380 392,340" fill="none" stroke="#ffffff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>
