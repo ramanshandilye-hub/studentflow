@@ -307,10 +307,74 @@ body {
   border-radius: var(--radius-full);
 }
 
+.greeting-container {
+  margin-top: 2px;
+}
+
+.greeting-display {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .header-greeting {
   font-size: 0.88rem;
   color: var(--text-muted);
+  cursor: pointer;
+}
+
+.header-greeting:hover {
+  color: var(--primary);
+}
+
+.edit-greeting-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.edit-greeting-btn:hover {
+  background: var(--bg-subtle);
+  color: var(--text-main);
+}
+
+.edit-greeting-btn .edit-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.greeting-edit-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin-top: 2px;
+}
+
+.greeting-edit-form[hidden] {
+  display: none !important;
+}
+
+.greeting-name-input {
+  min-height: 32px;
+  height: 32px;
+  padding: 4px 10px;
+  font-size: 0.85rem;
+  width: 140px;
+}
+
+.greeting-btn {
+  min-height: 32px;
+  height: 32px;
+  padding: 4px 10px;
+  font-size: 0.8rem;
 }
 
 .header-actions {
@@ -589,6 +653,28 @@ body {
 .options-row .input-field-group {
   flex: 1;
   min-width: 170px;
+}
+
+/* Custom Subject Input */
+.custom-subject-wrapper {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: slideDown 150ms ease-out;
+}
+
+.custom-subject-wrapper[hidden] {
+  display: none !important;
+}
+
+.custom-subject-wrapper .sub-label {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.custom-subject-input {
+  min-height: 42px;
 }
 
 .input-label {
@@ -946,6 +1032,99 @@ body {
   background: rgba(255, 255, 255, 0.1);
 }
 
+/* Quick Date Filter Chips */
+.quick-chips-group {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding: 2px 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.quick-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  background: var(--bg-card);
+  border: 1.5px dashed var(--border-color);
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  white-space: nowrap;
+}
+
+.quick-chip:hover {
+  border-style: solid;
+  border-color: var(--border-hover);
+  color: var(--text-main);
+  background: var(--bg-subtle);
+}
+
+.quick-chip.active {
+  border-style: solid;
+  border-color: var(--primary);
+  background: var(--primary-light);
+  color: var(--primary);
+  box-shadow: 0 1px 4px var(--primary-glow);
+}
+
+.quick-chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.overdue-dot { background-color: var(--danger); }
+.today-dot { background-color: var(--warning); }
+.week-dot { background-color: var(--info); }
+
+.chip-counter {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: var(--bg-subtle);
+  color: var(--text-muted);
+}
+
+.quick-chip.active .chip-counter {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+/* Backup Actions (Export / Import) */
+.backup-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar-btn {
+  min-height: 40px;
+  padding: 6px 12px;
+  font-size: 0.84rem;
+}
+
+.toolbar-btn .btn-icon {
+  width: 15px;
+  height: 15px;
+}
+
+@media (max-width: 520px) {
+  .toolbar-btn-text {
+    display: none;
+  }
+  .toolbar-btn {
+    padding: 6px 10px;
+  }
+}
+
 /* Secondary Toolbar Row (Subject, Sort, Clear Completed) */
 .toolbar-controls-row {
   display: flex;
@@ -1167,6 +1346,21 @@ body {
 .badge-cat-coding { background: var(--cat-coding-bg); color: var(--cat-coding); }
 .badge-cat-other { background: var(--cat-other-bg); color: var(--cat-other); }
 
+/* Custom Subject Badges (Stable color palette from name hash) */
+.badge-custom-0 { background: #e0f2fe; color: #0369a1; }
+.badge-custom-1 { background: #fce7f3; color: #be185d; }
+.badge-custom-2 { background: #fef3c7; color: #b45309; }
+.badge-custom-3 { background: #ede9fe; color: #6d28d9; }
+.badge-custom-4 { background: #ccfbf1; color: #0f766e; }
+.badge-custom-5 { background: #fee2e2; color: #b91c1c; }
+
+[data-theme="dark"] .badge-custom-0 { background: #0c4a6e; color: #7dd3fc; }
+[data-theme="dark"] .badge-custom-1 { background: #831843; color: #f472b6; }
+[data-theme="dark"] .badge-custom-2 { background: #78350f; color: #fcd34d; }
+[data-theme="dark"] .badge-custom-3 { background: #4c1d95; color: #c4b5fd; }
+[data-theme="dark"] .badge-custom-4 { background: #134e4a; color: #5eead4; }
+[data-theme="dark"] .badge-custom-5 { background: #7f1d1d; color: #fca5a5; }
+
 /* Due Date Badges */
 .badge-due-overdue {
   background: var(--danger-light);
@@ -1261,6 +1455,13 @@ body {
 .edit-options-row .select-wrapper {
   flex: 1;
   min-width: 120px;
+}
+
+.edit-custom-subject-input {
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 12px;
+  font-size: 0.88rem;
 }
 
 .edit-actions-row {

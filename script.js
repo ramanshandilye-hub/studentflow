@@ -22,9 +22,20 @@
 
 // LocalStorage keys
 const STORAGE_KEYS = {
-  TASKS: 'studentflow_tasks_v1',
-  THEME: 'studentflow_theme_v1'
+  TASKS: 'studentflow_tasks_v2',
+  OLD_TASKS: 'studentflow_tasks_v1',
+  THEME: 'studentflow_theme_v1',
+  USER_NAME: 'studentflow_name_v1'
 };
+
+// Titles of the original sample tasks to remove during v1 -> v2 migration
+const OLD_SAMPLE_TITLES = [
+  'Complete Math Problem Set #4: Derivatives & Integrals',
+  'Read Biology Chapter 7: Photosynthesis and Cellular Respiration',
+  'Draft English Essay Outline: Themes in Shakespeare\'s Hamlet',
+  'Implement Binary Search Tree in Python',
+  'Submit European History Paper Topic to Professor'
+];
 
 // Category metadata (Labels & Icons)
 const CATEGORIES = {
@@ -49,7 +60,8 @@ const PRIORITIES = {
 const state = {
   tasks: [],                  // Array of task objects
   filter: 'all',             // 'all' | 'pending' | 'completed'
-  categoryFilter: 'all',     // 'all' | 'math' | 'science' | 'english' | 'history' | 'coding' | 'other'
+  categoryFilter: 'all',     // 'all' | 'math' | 'science' | 'english' | 'history' | 'coding' | 'other' | 'custom:<norm>'
+  quickView: null,           // null | 'overdue' | 'today' | 'week'
   searchQuery: '',           // Filter query string
   sortBy: 'newest',          // 'newest' | 'due-date' | 'priority'
   editingTaskId: null,       // ID of task currently in inline-edit mode
@@ -64,7 +76,13 @@ const DOM = {
   html: document.documentElement,
   themeToggleBtn: document.getElementById('themeToggleBtn'),
   installAppBtn: document.getElementById('installAppBtn'),
+  greetingContainer: document.querySelector('.greeting-container'),
+  greetingDisplay: document.getElementById('greetingDisplay'),
   greetingText: document.getElementById('greetingText'),
+  editGreetingBtn: document.getElementById('editGreetingBtn'),
+  greetingEditForm: document.getElementById('greetingEditForm'),
+  greetingNameInput: document.getElementById('greetingNameInput'),
+  cancelGreetingBtn: document.getElementById('cancelGreetingBtn'),
   currentDateStr: document.getElementById('currentDateStr'),
 
   // Stats Counters
@@ -82,21 +100,33 @@ const DOM = {
   taskForm: document.getElementById('taskForm'),
   taskTitleInput: document.getElementById('taskTitleInput'),
   taskCategorySelect: document.getElementById('taskCategorySelect'),
+  customSubjectGroup: document.getElementById('customSubjectGroup'),
+  taskCustomSubjectInput: document.getElementById('taskCustomSubjectInput'),
+  customSubjectsDatalist: document.getElementById('customSubjectsDatalist'),
   taskPrioritySelect: document.getElementById('taskPrioritySelect'),
   taskDueDateInput: document.getElementById('taskDueDateInput'),
   titleErrorMsg: document.getElementById('titleErrorMsg'),
   titleErrorText: document.getElementById('titleErrorText'),
 
-  // Search & Filters
+  // Search, Filters & Quick Views
   searchInput: document.getElementById('searchInput'),
   searchClearBtn: document.getElementById('searchClearBtn'),
   filterPills: document.querySelectorAll('.filter-pill'),
   filterCountAll: document.getElementById('filterCountAll'),
   filterCountPending: document.getElementById('filterCountPending'),
   filterCountCompleted: document.getElementById('filterCountCompleted'),
+  quickChips: document.querySelectorAll('.quick-chip'),
+  quickCountOverdue: document.getElementById('quickCountOverdue'),
+  quickCountToday: document.getElementById('quickCountToday'),
+  quickCountWeek: document.getElementById('quickCountWeek'),
   categoryFilterSelect: document.getElementById('categoryFilterSelect'),
   sortSelect: document.getElementById('sortSelect'),
   clearCompletedBtn: document.getElementById('clearCompletedBtn'),
+
+  // Backup Controls
+  exportBtn: document.getElementById('exportBtn'),
+  importBtn: document.getElementById('importBtn'),
+  importFileInput: document.getElementById('importFileInput'),
 
   // Task List & Empty State
   taskList: document.getElementById('taskList'),
@@ -123,29 +153,63 @@ const DOM = {
    ========================================================================== */
 
 /**
+ * Validate and sanitize a single task object against corrupted or missing properties.
+ */
+function sanitizeTask(item) {
+  if (!item || typeof item !== 'object' || typeof item.id !== 'string' || typeof item.title !== 'string') {
+    return null;
+  }
+  const title = item.title.trim();
+  if (!title) return null;
+
+  const customSubject = typeof item.customSubject === 'string'
+    ? item.customSubject.trim().replace(/\s+/g, ' ').slice(0, 30)
+    : '';
+
+  return {
+    id: item.id,
+    title: title,
+    completed: Boolean(item.completed),
+    priority: ['low', 'medium', 'high'].includes(item.priority) ? item.priority : 'medium',
+    category: CATEGORIES[item.category] ? item.category : 'other',
+    customSubject: customSubject,
+    dueDate: typeof item.dueDate === 'string' ? item.dueDate : '',
+    createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now()
+  };
+}
+
+/**
  * Load tasks array from LocalStorage.
- * Returns null if key does not exist (allows first-time seeding).
- * Sanitizes and validates each task object against corrupted data.
+ * Handles automatic migration from v1 to v2 (filtering out legacy sample tasks).
+ * Returns an empty array for brand-new users (starts clean).
  */
 function loadTasksFromStorage() {
   try {
-    const raw = localStorage.getItem(STORAGE_KEYS.TASKS);
-    if (raw === null) return null; // First-time user signal
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
+    const rawV2 = localStorage.getItem(STORAGE_KEYS.TASKS);
+    if (rawV2 !== null) {
+      const parsed = JSON.parse(rawV2);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map(sanitizeTask).filter(Boolean);
+    }
 
-    // Sanitize each task object to guarantee data integrity
-    return parsed
-      .filter(item => item && typeof item === 'object' && typeof item.id === 'string' && typeof item.title === 'string')
-      .map(item => ({
-        id: item.id,
-        title: item.title.trim(),
-        completed: Boolean(item.completed),
-        priority: ['low', 'medium', 'high'].includes(item.priority) ? item.priority : 'medium',
-        category: CATEGORIES[item.category] ? item.category : 'other',
-        dueDate: typeof item.dueDate === 'string' ? item.dueDate : '',
-        createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now()
-      }));
+    // v2 does not exist yet. Check for legacy v1 to migrate
+    const rawV1 = localStorage.getItem(STORAGE_KEYS.OLD_TASKS);
+    if (rawV1 !== null) {
+      const parsedV1 = JSON.parse(rawV1);
+      let migrated = [];
+      if (Array.isArray(parsedV1)) {
+        migrated = parsedV1
+          .filter(item => item && !OLD_SAMPLE_TITLES.includes(item.title ? item.title.trim() : ''))
+          .map(sanitizeTask)
+          .filter(Boolean);
+      }
+      localStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(migrated));
+      localStorage.removeItem(STORAGE_KEYS.OLD_TASKS);
+      return migrated;
+    }
+
+    // New user starts completely fresh with an empty task list
+    return [];
   } catch (err) {
     console.error('Failed to load tasks from localStorage:', err);
     return [];
@@ -161,6 +225,32 @@ function saveTasksToStorage() {
   } catch (err) {
     console.error('Failed to save tasks to localStorage:', err);
     showToast('Storage quota exceeded or disabled. Changes may not persist.', 'danger');
+  }
+}
+
+/**
+ * Read custom student name or default to 'Student'.
+ */
+function getUserName() {
+  try {
+    const name = localStorage.getItem(STORAGE_KEYS.USER_NAME);
+    return (name && name.trim()) ? name.trim().slice(0, 20) : 'Student';
+  } catch (err) {
+    return 'Student';
+  }
+}
+
+/**
+ * Save custom student name to LocalStorage.
+ */
+function saveUserName(name) {
+  try {
+    const trimmed = (name && name.trim()) ? name.trim().slice(0, 20) : 'Student';
+    localStorage.setItem(STORAGE_KEYS.USER_NAME, trimmed);
+    return trimmed;
+  } catch (err) {
+    console.warn('Failed to save name:', err);
+    return 'Student';
   }
 }
 
@@ -228,13 +318,56 @@ function formatTodayDate() {
 }
 
 /**
- * Calculate dynamic greeting based on current time of day.
+ * Calculate dynamic greeting with user's custom name based on time of day.
  */
 function getGreeting() {
   const hour = new Date().getHours();
-  if (hour < 12) return 'Good morning, Student! ☀️ Ready to study?';
-  if (hour < 17) return 'Good afternoon, Student! 📖 Keep the momentum going!';
-  return 'Good evening, Student! 🌙 Wrap up your assignments!';
+  const name = getUserName();
+  let timeGreeting = 'Good day';
+  if (hour < 12) timeGreeting = 'Good morning';
+  else if (hour < 17) timeGreeting = 'Good afternoon';
+  else timeGreeting = 'Good evening';
+
+  return `${timeGreeting}, ${name}!`;
+}
+
+/**
+ * Format custom subject display (First letter capital, rest as user typed).
+ */
+function formatSubjectDisplay(name) {
+  if (!name) return '';
+  const trimmed = name.trim().replace(/\s+/g, ' ');
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+/**
+ * Stable color badge class generator based on subject name string hash.
+ */
+function getSubjectColorClass(name) {
+  if (!name) return 'badge-cat-other';
+  let hash = 0;
+  const normalized = name.toLowerCase().trim();
+  for (let i = 0; i < normalized.length; i++) {
+    hash = ((hash << 5) - hash) + normalized.charCodeAt(i);
+    hash |= 0;
+  }
+  const colorIdx = Math.abs(hash) % 6;
+  return `badge-custom-${colorIdx}`;
+}
+
+/**
+ * Calculate calendar day difference between a task's due date and today.
+ */
+function getTaskDiffDays(task) {
+  if (!task.dueDate) return null;
+  const parts = task.dueDate.split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return null;
+  const [year, month, day] = parts;
+  const dueDate = new Date(year, month - 1, day);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffTime = dueDate.getTime() - today.getTime();
+  return Math.round(diffTime / (1000 * 60 * 60 * 24));
 }
 
 /**
@@ -434,6 +567,76 @@ function showConfirmModal(title, description, onConfirmCallback) {
    ========================================================================== */
 
 /**
+ * Rebuild category filter options including dynamic custom subjects from current tasks.
+ */
+function rebuildCategoryFilterOptions() {
+  if (!DOM.categoryFilterSelect) return;
+  const currentVal = state.categoryFilter;
+
+  // Collect distinct custom subjects currently in state
+  const customMap = new Map(); // normalized -> display
+  state.tasks.forEach(t => {
+    if (t.category === 'other' && t.customSubject) {
+      const norm = t.customSubject.trim().replace(/\s+/g, ' ').toLowerCase();
+      if (!customMap.has(norm)) {
+        customMap.set(norm, formatSubjectDisplay(t.customSubject));
+      }
+    }
+  });
+
+  // If active filter is a custom subject that no longer exists in any task, reset to 'all'
+  if (currentVal.startsWith('custom:')) {
+    const norm = currentVal.slice(7);
+    if (!customMap.has(norm)) {
+      state.categoryFilter = 'all';
+    }
+  }
+
+  let html = `
+    <option value="all">All Subjects</option>
+    <option value="math">📐 Mathematics</option>
+    <option value="science">🔬 Science</option>
+    <option value="english">📚 English / Lit</option>
+    <option value="history">🏛️ History</option>
+    <option value="coding">💻 Coding / CS</option>
+    <option value="other">📝 General / Other</option>
+  `;
+
+  if (customMap.size > 0) {
+    html += '<optgroup label="Your subjects">';
+    Array.from(customMap.entries())
+      .sort((a, b) => a[1].localeCompare(b[1]))
+      .forEach(([norm, disp]) => {
+        html += `<option value="custom:${norm}">🏷️ ${escapeHTML(disp)}</option>`;
+      });
+    html += '</optgroup>';
+  }
+
+  DOM.categoryFilterSelect.innerHTML = html;
+  DOM.categoryFilterSelect.value = state.categoryFilter;
+}
+
+/**
+ * Populate datalist with unique custom subjects previously used.
+ */
+function updateCustomSubjectsDatalist() {
+  if (!DOM.customSubjectsDatalist) return;
+  const set = new Set();
+  state.tasks.forEach(t => {
+    if (t.category === 'other' && t.customSubject) {
+      set.add(formatSubjectDisplay(t.customSubject));
+    }
+  });
+
+  DOM.customSubjectsDatalist.innerHTML = '';
+  Array.from(set).sort().forEach(subj => {
+    const opt = document.createElement('option');
+    opt.value = subj;
+    DOM.customSubjectsDatalist.appendChild(opt);
+  });
+}
+
+/**
  * Main render function. Reads state, computes stats, filters, sorts,
  * and updates DOM accordingly.
  */
@@ -464,10 +667,31 @@ function render() {
   DOM.filterCountPending.textContent = pendingCount;
   DOM.filterCountCompleted.textContent = completedCount;
 
-  // 6. Update Clear Completed Button state
+  // 6. Update Quick Date Filter Counts
+  // Overdue count applies ONLY to pending tasks (per requirements)
+  const overdueCount = state.tasks.filter(t => !t.completed && getTaskDiffDays(t) !== null && getTaskDiffDays(t) < 0).length;
+  const todayCount = state.tasks.filter(t => getTaskDiffDays(t) === 0).length;
+  const weekCount = state.tasks.filter(t => {
+    const d = getTaskDiffDays(t);
+    return d !== null && d >= 0 && d <= 7;
+  }).length;
+
+  if (DOM.quickCountOverdue) DOM.quickCountOverdue.textContent = overdueCount;
+  if (DOM.quickCountToday) DOM.quickCountToday.textContent = todayCount;
+  if (DOM.quickCountWeek) DOM.quickCountWeek.textContent = weekCount;
+
+  // Update Quick Chip Pressed & Active states
+  DOM.quickChips.forEach(chip => {
+    const q = chip.getAttribute('data-quick');
+    const isActive = state.quickView === q;
+    chip.classList.toggle('active', isActive);
+    chip.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  });
+
+  // 7. Update Clear Completed Button state
   DOM.clearCompletedBtn.disabled = completedCount === 0;
 
-  // 7. Update Filter Pills Active State
+  // 8. Update Filter Pills Active State
   DOM.filterPills.forEach(pill => {
     const pillFilter = pill.getAttribute('data-filter');
     const isActive = pillFilter === state.filter;
@@ -475,7 +699,11 @@ function render() {
     pill.setAttribute('aria-selected', isActive ? 'true' : 'false');
   });
 
-  // 8. Filter Tasks by Status, Category, and Search Query
+  // 9. Rebuild dynamic category filter dropdown & update custom subjects datalist
+  rebuildCategoryFilterOptions();
+  updateCustomSubjectsDatalist();
+
+  // 10. Filter Tasks by Status, Quick View, Category, and Search Query
   const searchLower = state.searchQuery.trim().toLowerCase();
 
   let filteredTasks = state.tasks.filter(task => {
@@ -483,8 +711,31 @@ function render() {
     if (state.filter === 'pending' && task.completed) return false;
     if (state.filter === 'completed' && !task.completed) return false;
 
+    // Quick View filter
+    if (state.quickView) {
+      const diff = getTaskDiffDays(task);
+      if (state.quickView === 'overdue') {
+        if (task.completed || diff === null || diff >= 0) return false;
+      } else if (state.quickView === 'today') {
+        if (diff !== 0) return false;
+      } else if (state.quickView === 'week') {
+        if (diff === null || diff < 0 || diff > 7) return false;
+      }
+    }
+
     // Category filter
-    if (state.categoryFilter !== 'all' && task.category !== state.categoryFilter) return false;
+    if (state.categoryFilter !== 'all') {
+      if (state.categoryFilter.startsWith('custom:')) {
+        const normKey = state.categoryFilter.slice(7);
+        const taskNorm = (task.customSubject || '').trim().replace(/\s+/g, ' ').toLowerCase();
+        if (task.category !== 'other' || taskNorm !== normKey) return false;
+      } else if (state.categoryFilter === 'other') {
+        // "General / Other" matches tasks without a custom subject
+        if (task.category !== 'other' || Boolean(task.customSubject && task.customSubject.trim())) return false;
+      } else {
+        if (task.category !== state.categoryFilter) return false;
+      }
+    }
 
     // Search query filter (matches title)
     if (searchLower && !task.title.toLowerCase().includes(searchLower)) return false;
@@ -492,7 +743,7 @@ function render() {
     return true;
   });
 
-  // 9. Sort Tasks
+  // 11. Sort Tasks
   filteredTasks.sort((a, b) => {
     if (state.sortBy === 'newest') {
       return b.createdAt - a.createdAt; // Descending timestamp
@@ -520,7 +771,7 @@ function render() {
     return 0;
   });
 
-  // 10. Render Task List or Friendly Contextual Empty State
+  // 12. Render Task List or Friendly Contextual Empty State
   renderTaskList(filteredTasks, totalCount, completedCount, pendingCount);
 }
 
@@ -566,12 +817,34 @@ function renderEmptyState(totalCount, completedCount, pendingCount) {
     iconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>`;
     heading = 'No matching tasks';
     message = `No assignments found matching "${escapeHTML(state.searchQuery)}". Try another search or clear the filter.`;
+  } else if (state.quickView === 'overdue') {
+    iconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`;
+    heading = 'No overdue tasks! 🎉';
+    message = 'Awesome job! You have zero overdue assignments. Everything is right on track!';
+  } else if (state.quickView === 'today') {
+    iconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`;
+    heading = 'No tasks due today';
+    message = 'You have no assignments due today. Take a breather or plan ahead for tomorrow!';
+  } else if (state.quickView === 'week') {
+    iconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>`;
+    heading = 'No tasks due in the next 7 days';
+    message = 'Your upcoming week is completely clear of scheduled deadlines!';
   } else if (state.categoryFilter !== 'all') {
     // Category filter has no matches
-    const catLabel = CATEGORIES[state.categoryFilter]?.label || 'this subject';
+    let catDisplayName = 'this subject';
+    if (state.categoryFilter.startsWith('custom:')) {
+      const norm = state.categoryFilter.slice(7);
+      const matched = state.tasks.find(t => (t.customSubject || '').trim().replace(/\s+/g, ' ').toLowerCase() === norm);
+      catDisplayName = matched ? formatSubjectDisplay(matched.customSubject) : norm;
+    } else if (state.categoryFilter === 'other') {
+      catDisplayName = 'General / Other';
+    } else {
+      catDisplayName = CATEGORIES[state.categoryFilter]?.label || 'this subject';
+    }
+
     iconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>`;
-    heading = `No ${catLabel} tasks`;
-    message = `You don't have any tasks logged under ${catLabel} currently.`;
+    heading = `No ${escapeHTML(catDisplayName)} tasks`;
+    message = `You don't have any tasks logged under ${escapeHTML(catDisplayName)} currently.`;
   } else if (state.filter === 'pending') {
     // Pending filter empty -> User finished all work!
     iconSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>`;
@@ -643,11 +916,21 @@ function createTaskItemElement(task) {
   const metaRow = document.createElement('div');
   metaRow.className = 'task-meta-row';
 
-  // Category Badge
-  const catMeta = CATEGORIES[task.category] || CATEGORIES.other;
+  // Category / Subject Badge
   const catBadge = document.createElement('span');
-  catBadge.className = `badge ${catMeta.className}`;
-  catBadge.innerHTML = `<span class="badge-icon">${catMeta.icon}</span> <span>${escapeHTML(catMeta.label)}</span>`;
+  if (task.category === 'other' && task.customSubject) {
+    const dispName = formatSubjectDisplay(task.customSubject);
+    const colorClass = getSubjectColorClass(task.customSubject);
+    catBadge.className = `badge ${colorClass}`;
+    catBadge.innerHTML = `<span class="badge-icon">🏷️</span> <span>${escapeHTML(dispName)}</span>`;
+  } else if (task.category === 'other') {
+    catBadge.className = 'badge badge-cat-other';
+    catBadge.innerHTML = '<span class="badge-icon">📝</span> <span>General / Other</span>';
+  } else {
+    const catMeta = CATEGORIES[task.category] || CATEGORIES.other;
+    catBadge.className = `badge ${catMeta.className}`;
+    catBadge.innerHTML = `<span class="badge-icon">${catMeta.icon}</span> <span>${escapeHTML(catMeta.label)}</span>`;
+  }
   metaRow.appendChild(catBadge);
 
   // Priority Badge
@@ -742,12 +1025,32 @@ function createInlineEditElement(task) {
   Object.keys(CATEGORIES).forEach(key => {
     const opt = document.createElement('option');
     opt.value = key;
-    opt.textContent = `${CATEGORIES[key].icon} ${CATEGORIES[key].label}`;
+    opt.textContent = key === 'other' ? '📝 Other (type your own)' : `${CATEGORIES[key].icon} ${CATEGORIES[key].label}`;
     if (key === task.category) opt.selected = true;
     catSelect.appendChild(opt);
   });
   catWrapper.appendChild(catSelect);
   optionsRow.appendChild(catWrapper);
+
+  // Custom Subject input for inline edit (Visible when 'other' is selected)
+  const customSubjInput = document.createElement('input');
+  customSubjInput.type = 'text';
+  customSubjInput.className = 'text-input compact-select edit-custom-subject-input';
+  customSubjInput.placeholder = 'Type your subject, e.g. Chemistry, Civics';
+  customSubjInput.maxLength = 30;
+  customSubjInput.value = (task.category === 'other' && task.customSubject) ? task.customSubject : '';
+  customSubjInput.setAttribute('aria-label', 'Custom subject');
+  customSubjInput.hidden = task.category !== 'other';
+  optionsRow.appendChild(customSubjInput);
+
+  catSelect.addEventListener('change', () => {
+    if (catSelect.value === 'other') {
+      customSubjInput.hidden = false;
+      customSubjInput.focus();
+    } else {
+      customSubjInput.hidden = true;
+    }
+  });
 
   // Priority select
   const priWrapper = document.createElement('div');
@@ -786,7 +1089,7 @@ function createInlineEditElement(task) {
   saveBtn.className = 'btn edit-save-btn';
   saveBtn.textContent = 'Save Changes (Enter)';
   saveBtn.addEventListener('click', () => {
-    handleSaveEdit(task.id, titleInput.value, catSelect.value, priSelect.value, dateInput.value);
+    handleSaveEdit(task.id, titleInput.value, catSelect.value, priSelect.value, dateInput.value, customSubjInput.value);
   });
 
   actionsRow.appendChild(cancelBtn);
@@ -796,7 +1099,7 @@ function createInlineEditElement(task) {
   editContainer.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') {
       e.preventDefault();
-      handleSaveEdit(task.id, titleInput.value, catSelect.value, priSelect.value, dateInput.value);
+      handleSaveEdit(task.id, titleInput.value, catSelect.value, priSelect.value, dateInput.value, customSubjInput.value);
     } else if (e.key === 'Escape') {
       e.preventDefault();
       handleCancelEdit();
@@ -837,6 +1140,17 @@ function handleAddTask(e) {
     return;
   }
 
+  const category = DOM.taskCategorySelect.value || 'other';
+  let customSubj = '';
+  if (category === 'other') {
+    customSubj = (DOM.taskCustomSubjectInput.value || '').trim().replace(/\s+/g, ' ').slice(0, 30);
+    if (!customSubj) {
+      showFormError('Please type your subject name');
+      DOM.taskCustomSubjectInput.focus();
+      return;
+    }
+  }
+
   // Clear any existing inline error
   hideFormError();
 
@@ -845,7 +1159,8 @@ function handleAddTask(e) {
     title: title,
     completed: false,
     priority: DOM.taskPrioritySelect.value || 'medium',
-    category: DOM.taskCategorySelect.value || 'other',
+    category: category,
+    customSubject: customSubj,
     dueDate: DOM.taskDueDateInput.value || '',
     createdAt: Date.now()
   };
@@ -854,10 +1169,9 @@ function handleAddTask(e) {
   state.tasks.unshift(newTask);
   saveTasksToStorage();
 
-  // Reset form inputs (preserve category for speed if desired, or reset cleanly)
+  // Reset task title and due date, but PRESERVE chosen subject and custom subject
   DOM.taskTitleInput.value = '';
   DOM.taskDueDateInput.value = '';
-  // Return focus to input for smooth rapid typing
   DOM.taskTitleInput.focus();
 
   showToast('Task added successfully! 🎯', 'success');
@@ -965,11 +1279,20 @@ function handleStartEdit(taskId) {
 /**
  * Save inline edited changes for a task.
  */
-function handleSaveEdit(taskId, newTitle, newCategory, newPriority, newDueDate) {
+function handleSaveEdit(taskId, newTitle, newCategory, newPriority, newDueDate, newCustomSubject) {
   const trimmedTitle = newTitle.trim();
   if (!trimmedTitle) {
     showToast('Task title cannot be empty.', 'danger');
     return;
+  }
+
+  let formattedCustomSubject = '';
+  if (newCategory === 'other') {
+    formattedCustomSubject = (newCustomSubject || '').trim().replace(/\s+/g, ' ').slice(0, 30);
+    if (!formattedCustomSubject) {
+      showToast('Please type your subject name', 'danger');
+      return;
+    }
   }
 
   const task = state.tasks.find(t => t.id === taskId);
@@ -977,6 +1300,7 @@ function handleSaveEdit(taskId, newTitle, newCategory, newPriority, newDueDate) 
 
   task.title = trimmedTitle;
   task.category = newCategory || 'other';
+  task.customSubject = formattedCustomSubject;
   task.priority = newPriority || 'medium';
   task.dueDate = newDueDate || '';
 
@@ -1045,76 +1369,128 @@ function handleClearSearch() {
   render();
 }
 
+/**
+ * Handle exporting all tasks to a JSON backup file.
+ */
+function handleExportTasks() {
+  try {
+    const dataStr = JSON.stringify(state.tasks, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const filename = `studentflow-backup-${y}-${m}-${d}.json`;
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast(`Exported ${state.tasks.length} task${state.tasks.length === 1 ? '' : 's'} to backup file! 📁`, 'success');
+  } catch (err) {
+    console.error('Export failed:', err);
+    showToast('Failed to export backup.', 'danger');
+  }
+}
+
+/**
+ * Handle importing tasks from an uploaded JSON backup file.
+ */
+function handleImportTasks(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    try {
+      const parsed = JSON.parse(event.target.result);
+      if (!Array.isArray(parsed)) {
+        showToast('Invalid backup file. JSON must contain an array of tasks.', 'danger');
+        return;
+      }
+
+      const validTasks = parsed.map(sanitizeTask).filter(Boolean);
+      if (validTasks.length === 0 && parsed.length > 0) {
+        showToast('No valid tasks found in the backup file.', 'danger');
+        return;
+      }
+
+      // Merge: skip duplicate IDs
+      const existingIds = new Set(state.tasks.map(t => t.id));
+      let addedCount = 0;
+      validTasks.forEach(task => {
+        if (!existingIds.has(task.id)) {
+          state.tasks.push(task);
+          existingIds.add(task.id);
+          addedCount++;
+        }
+      });
+
+      saveTasksToStorage();
+      render();
+
+      if (addedCount > 0) {
+        showToast(`Successfully imported ${addedCount} new task${addedCount === 1 ? '' : 's'}! 📥`, 'success');
+      } else {
+        showToast('All tasks in the file already exist in your planner.', 'info');
+      }
+    } catch (err) {
+      console.error('Import parse error:', err);
+      showToast('Invalid JSON file format. Please upload a valid backup.', 'danger');
+    } finally {
+      DOM.importFileInput.value = '';
+    }
+  };
+
+  reader.onerror = () => {
+    showToast('Could not read the selected file.', 'danger');
+    DOM.importFileInput.value = '';
+  };
+
+  reader.readAsText(file);
+}
+
+/**
+ * Start editing custom student name in header.
+ */
+function handleStartEditGreeting() {
+  DOM.greetingDisplay.hidden = true;
+  DOM.greetingEditForm.hidden = false;
+  DOM.greetingNameInput.value = getUserName();
+  DOM.greetingNameInput.focus();
+  DOM.greetingNameInput.select();
+}
+
+/**
+ * Save edited student name.
+ */
+function handleSaveGreeting(e) {
+  if (e) e.preventDefault();
+  const rawName = DOM.greetingNameInput.value.trim();
+  const saved = saveUserName(rawName || 'Student');
+
+  DOM.greetingEditForm.hidden = true;
+  DOM.greetingDisplay.hidden = false;
+  DOM.greetingText.textContent = getGreeting();
+  showToast(`Name updated to "${escapeHTML(saved)}"! 👋`, 'success');
+}
+
+/**
+ * Cancel editing student name.
+ */
+function handleCancelGreeting() {
+  DOM.greetingEditForm.hidden = true;
+  DOM.greetingDisplay.hidden = false;
+}
+
 /* ==========================================================================
    7. INITIALIZATION & SEEDING
    ========================================================================== */
-
-/**
- * High-quality starter tasks for first-time visitors.
- * Demonstrates all categories, priorities, due dates, and completed states.
- */
-function getSampleTasks() {
-  const now = new Date();
-  const formatISO = (d) => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  };
-
-  const todayStr = formatISO(now);
-  const tomorrowStr = formatISO(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1));
-  const yesterdayStr = formatISO(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
-  const futureStr = formatISO(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 3));
-
-  return [
-    {
-      id: generateId(),
-      title: 'Complete Math Problem Set #4: Derivatives & Integrals',
-      completed: false,
-      priority: 'high',
-      category: 'math',
-      dueDate: todayStr,
-      createdAt: Date.now() - 3600000 * 3
-    },
-    {
-      id: generateId(),
-      title: 'Read Biology Chapter 7: Photosynthesis and Cellular Respiration',
-      completed: false,
-      priority: 'medium',
-      category: 'science',
-      dueDate: tomorrowStr,
-      createdAt: Date.now() - 3600000 * 2
-    },
-    {
-      id: generateId(),
-      title: 'Draft English Essay Outline: Themes in Shakespeare\'s Hamlet',
-      completed: false,
-      priority: 'high',
-      category: 'english',
-      dueDate: yesterdayStr, // Shows Overdue badge
-      createdAt: Date.now() - 3600000 * 24
-    },
-    {
-      id: generateId(),
-      title: 'Implement Binary Search Tree in Python',
-      completed: false,
-      priority: 'low',
-      category: 'coding',
-      dueDate: futureStr,
-      createdAt: Date.now() - 3600000
-    },
-    {
-      id: generateId(),
-      title: 'Submit European History Paper Topic to Professor',
-      completed: true,
-      priority: 'low',
-      category: 'history',
-      dueDate: todayStr,
-      createdAt: Date.now() - 3600000 * 48
-    }
-  ];
-}
 
 /**
  * Attach all application event listeners.
@@ -1123,12 +1499,35 @@ function bindEventListeners() {
   // Theme Toggle
   DOM.themeToggleBtn.addEventListener('click', handleThemeToggle);
 
+  // Editable Greeting
+  if (DOM.editGreetingBtn) DOM.editGreetingBtn.addEventListener('click', handleStartEditGreeting);
+  if (DOM.greetingText) DOM.greetingText.addEventListener('click', handleStartEditGreeting);
+  if (DOM.greetingEditForm) DOM.greetingEditForm.addEventListener('submit', handleSaveGreeting);
+  if (DOM.cancelGreetingBtn) DOM.cancelGreetingBtn.addEventListener('click', handleCancelGreeting);
+
   // Add Task Form submission
   DOM.taskForm.addEventListener('submit', handleAddTask);
 
   // Clear validation error when user begins typing in title input
   DOM.taskTitleInput.addEventListener('input', () => {
     if (DOM.taskTitleInput.value.trim().length > 0) {
+      hideFormError();
+    }
+  });
+
+  // Custom Subject visibility toggle in Add Form
+  DOM.taskCategorySelect.addEventListener('change', () => {
+    const isOther = DOM.taskCategorySelect.value === 'other';
+    DOM.customSubjectGroup.hidden = !isOther;
+    if (isOther) {
+      DOM.taskCustomSubjectInput.focus();
+    } else {
+      hideFormError();
+    }
+  });
+
+  DOM.taskCustomSubjectInput.addEventListener('input', () => {
+    if (DOM.taskCustomSubjectInput.value.trim().length > 0) {
       hideFormError();
     }
   });
@@ -1141,6 +1540,15 @@ function bindEventListeners() {
         state.filter = selectedFilter;
         render();
       }
+    });
+  });
+
+  // Quick Date Filter Chips (Overdue / Due today / Next 7 days)
+  DOM.quickChips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      const q = chip.getAttribute('data-quick');
+      state.quickView = (state.quickView === q) ? null : q;
+      render();
     });
   });
 
@@ -1167,13 +1575,44 @@ function bindEventListeners() {
     }
   });
 
+  // Backup Export & Import
+  if (DOM.exportBtn) DOM.exportBtn.addEventListener('click', handleExportTasks);
+  if (DOM.importBtn) DOM.importBtn.addEventListener('click', () => DOM.importFileInput.click());
+  if (DOM.importFileInput) DOM.importFileInput.addEventListener('change', handleImportTasks);
+
   // Clear Completed Button
   DOM.clearCompletedBtn.addEventListener('click', handleClearCompleted);
 
-  // Global Keyboard shortcuts: Escape to cancel inline edit
+  // Global Keyboard shortcuts
   document.addEventListener('keydown', (e) => {
+    // Escape in greeting edit cancels it
+    if (e.key === 'Escape' && DOM.greetingEditForm && !DOM.greetingEditForm.hidden) {
+      handleCancelGreeting();
+      return;
+    }
+
+    // Escape in inline task edit cancels it
     if (e.key === 'Escape' && state.editingTaskId !== null) {
       handleCancelEdit();
+      return;
+    }
+
+    // Ignore single key shortcuts while user is typing in inputs or text fields
+    const active = document.activeElement;
+    const isEditingField = active && (
+      ['INPUT', 'SELECT', 'TEXTAREA'].includes(active.tagName) ||
+      active.isContentEditable
+    );
+    if (isEditingField) return;
+
+    if (e.key === 'n' || e.key === 'N') {
+      e.preventDefault();
+      DOM.taskTitleInput.focus();
+      DOM.taskTitleInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    } else if (e.key === '/') {
+      e.preventDefault();
+      DOM.searchInput.focus();
+      DOM.searchInput.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   });
 
@@ -1259,30 +1698,35 @@ function init() {
   const initialTheme = getInitialTheme();
   DOM.html.setAttribute('data-theme', initialTheme);
 
-  // 2. Load Tasks or Seed Initial Tasks
-  const storedTasks = loadTasksFromStorage();
-  if (storedTasks === null) {
-    // First time opening app: Provide realistic sample student tasks
-    state.tasks = getSampleTasks();
-    saveTasksToStorage();
-  } else {
-    state.tasks = storedTasks;
-  }
+  // 2. Load Tasks (Migrates v1 without old sample tasks; starts empty for fresh users)
+  state.tasks = loadTasksFromStorage();
 
   // 3. Bind UI Events
   bindEventListeners();
 
-  // 4. Register PWA Service Worker & Install Prompt
+  // 4. Sync custom subject input visibility with initial select value
+  if (DOM.customSubjectGroup && DOM.taskCategorySelect) {
+    DOM.customSubjectGroup.hidden = DOM.taskCategorySelect.value !== 'other';
+  }
+
+  // 5. Register PWA Service Worker & Install Prompt
   registerServiceWorker();
   setupPWAInstallation();
 
-  // 5. Initial Render
+  // 6. Initial Render
   render();
 
-  // 6. Focus input on desktop for instant interaction
+  // 7. Focus input on desktop for instant interaction
   if (window.innerWidth > 768) {
     DOM.taskTitleInput.focus();
   }
+}
+
+// Start the app when DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
 }
 
 // Start the app when DOM is ready

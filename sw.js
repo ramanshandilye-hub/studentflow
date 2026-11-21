@@ -3,7 +3,7 @@
  * Enables offline capability and PWA installability.
  */
 
-const CACHE_NAME = 'studentflow-v1';
+const CACHE_NAME = 'studentflow-v2';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
