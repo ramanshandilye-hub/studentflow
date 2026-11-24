@@ -89,6 +89,16 @@
             <span class="install-btn-text">Install App</span>
           </button>
 
+          <!-- Due Date Reminders / Notification Toggle Button -->
+          <button id="notificationToggleBtn" class="notification-toggle-btn" type="button" aria-label="Enable task due reminders" title="Enable task reminders">
+            <!-- Bell Icon -->
+            <svg class="notification-icon bell-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+              <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+            </svg>
+            <span class="notification-badge" id="notificationBadge" hidden aria-hidden="true"></span>
+          </button>
+
           <!-- Dark / Light Theme Toggle Button -->
           <button id="themeToggleBtn" class="theme-toggle-btn" type="button" aria-label="Switch between dark and light mode" title="Toggle Theme (Dark / Light)">
             <!-- Sun Icon (Shown in Dark Mode) -->
@@ -271,6 +281,14 @@
                 <input type="date" id="taskDueDateInput" class="text-input date-input">
               </div>
             </div>
+
+            <!-- Due Time Picker -->
+            <div class="input-field-group">
+              <label for="taskDueTimeInput" class="input-label">Due Time (Optional)</label>
+              <div class="date-input-wrapper">
+                <input type="time" id="taskDueTimeInput" class="text-input time-input" aria-label="Due time (optional)">
+              </div>
+            </div>
           </div>
 
           <!-- Form Actions Row (Submit Button as last element) -->
@@ -422,6 +440,28 @@
           </div>
         </div>
 
+        <!-- In-app Due Soon / Overdue Awareness Banner -->
+        <div id="dueSoonBanner" class="due-soon-banner" role="status" aria-live="polite" hidden>
+          <div class="due-banner-content">
+            <span class="due-banner-icon" aria-hidden="true">⏰</span>
+            <div class="due-banner-text">
+              <strong id="dueBannerTitle" class="due-banner-heading">Due Soon</strong>
+              <p id="dueBannerMsg" class="due-banner-desc"></p>
+            </div>
+          </div>
+          <div class="due-banner-actions">
+            <button type="button" id="dueBannerFilterBtn" class="btn btn-secondary due-banner-btn" aria-label="Filter to due soon and overdue tasks">
+              <span>View Tasks</span>
+            </button>
+            <button type="button" id="dueBannerDismissBtn" class="due-banner-dismiss" aria-label="Dismiss due soon notification banner" title="Dismiss banner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+
         <!-- Task List Container -->
         <ul id="taskList" class="task-list" aria-label="Task items list">
           <!-- Dynamically populated by script.js -->
@@ -459,6 +499,121 @@
         <div class="modal-actions">
           <button type="button" id="modalCancelBtn" class="btn btn-secondary">Cancel</button>
           <button type="button" id="modalConfirmBtn" class="btn btn-danger">Clear Completed</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reminder Settings Modal Dialog (Accessible) -->
+    <div id="reminderSettingsModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="reminderModalTitle" aria-describedby="reminderModalDesc" hidden>
+      <div class="modal-backdrop" id="reminderModalBackdrop"></div>
+      <div class="modal-dialog-card reminder-settings-card">
+        <div class="modal-card-header">
+          <div class="modal-title-group">
+            <div class="modal-icon-header reminder-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+              </svg>
+            </div>
+            <div>
+              <h3 id="reminderModalTitle" class="modal-title">Task Reminder Settings</h3>
+              <p id="reminderModalDesc" class="modal-subtitle">Configure deadline notifications and quiet hours</p>
+            </div>
+          </div>
+          <button type="button" id="reminderModalCloseBtn" class="modal-close-btn" aria-label="Close reminder settings" title="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="modal-body reminder-settings-body">
+          <!-- Permission Status Pill / Banner -->
+          <div class="reminder-perm-status" id="reminderPermStatusRow">
+            <span class="perm-status-label">Permission status:</span>
+            <span id="reminderPermBadge" class="badge perm-badge">Default</span>
+          </div>
+
+          <!-- Unblock help instructions if permission denied -->
+          <div id="reminderBlockedHelp" class="reminder-blocked-banner" hidden>
+            <p><strong>Notifications are blocked:</strong> Click the site settings / lock icon in your browser address bar, set Notifications to <em>Allow</em>, and reload StudentFlow.</p>
+          </div>
+
+          <!-- Master Toggle -->
+          <div class="setting-row">
+            <div class="setting-info">
+              <label for="reminderMasterToggle" class="setting-label">Enable Task Reminders</label>
+              <span class="setting-desc">Get notified before deadlines and when tasks become overdue</span>
+            </div>
+            <label class="switch-toggle" aria-label="Toggle task reminders">
+              <input type="checkbox" id="reminderMasterToggle">
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+
+          <!-- Lead Time Select -->
+          <div class="setting-row" id="leadTimeSettingRow">
+            <div class="setting-info">
+              <label for="reminderLeadTimeSelect" class="setting-label">Notify in advance</label>
+              <span class="setting-desc">How early to alert you before the deadline</span>
+            </div>
+            <div class="select-wrapper compact">
+              <select id="reminderLeadTimeSelect" class="select-input compact-select" aria-label="Advance reminder lead time">
+                <option value="1">1 hour before</option>
+                <option value="3">3 hours before</option>
+                <option value="5" selected>5 hours before (Default)</option>
+                <option value="12">12 hours before</option>
+                <option value="24">1 day before (24 hours)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Quiet Hours Toggle -->
+          <div class="setting-row" id="quietHoursSettingRow">
+            <div class="setting-info">
+              <label for="reminderQuietHoursToggle" class="setting-label">Quiet Hours</label>
+              <span class="setting-desc">Mute alerts during sleep or study hours (works across midnight)</span>
+            </div>
+            <label class="switch-toggle" aria-label="Toggle quiet hours">
+              <input type="checkbox" id="reminderQuietHoursToggle">
+              <span class="switch-slider"></span>
+            </label>
+          </div>
+
+          <!-- Quiet Hours Time Range Inputs (shown when quiet hours enabled) -->
+          <div class="setting-sub-row" id="quietHoursTimesRow" hidden>
+            <div class="time-range-group">
+              <label for="quietHoursStartInput" class="input-label sub-label">From</label>
+              <input type="time" id="quietHoursStartInput" class="text-input time-input compact" value="22:00" aria-label="Quiet hours start time">
+            </div>
+            <span class="time-range-sep">to</span>
+            <div class="time-range-group">
+              <label for="quietHoursEndInput" class="input-label sub-label">Until</label>
+              <input type="time" id="quietHoursEndInput" class="text-input time-input compact" value="08:00" aria-label="Quiet hours end time">
+            </div>
+          </div>
+
+          <!-- Send Test Notification -->
+          <div class="setting-action-row">
+            <button type="button" id="sendTestNotificationBtn" class="btn btn-secondary setting-btn">
+              <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+              </svg>
+              <span>Send test notification</span>
+            </button>
+          </div>
+
+          <!-- Informational Note (Required) -->
+          <div class="reminder-note-callout">
+            <span class="note-icon" aria-hidden="true">ℹ️</span>
+            <p class="note-text">Alerts appear while StudentFlow is open. For alerts when the app is closed, use 📅 Add to calendar on a task.</p>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" id="reminderModalDoneBtn" class="btn btn-primary">Done</button>
         </div>
       </div>
     </div>

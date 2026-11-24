@@ -3,7 +3,7 @@
  * Enables offline capability and PWA installability.
  */
 
-const CACHE_NAME = 'studentflow-v2';
+const CACHE_NAME = 'studentflow-v4';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -72,6 +72,35 @@ self.addEventListener('fetch', (event) => {
           return caches.match('./index.html');
         }
       });
+    })
+  );
+});
+
+// Notification click event: focus window or open index.html#task-<id>
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const taskId = event.notification.data && event.notification.data.taskId ? event.notification.data.taskId : '';
+  const targetHash = taskId ? '#task-' + taskId : '';
+  const targetUrl = './index.html' + targetHash;
+
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
+      // If a window is already open, focus it, send message, and navigate
+      for (const client of clientList) {
+        if ('focus' in client) {
+          if (taskId) {
+            client.postMessage({ type: 'FOCUS_TASK', taskId: taskId });
+            if ('navigate' in client) {
+              client.navigate(targetUrl);
+            }
+          }
+          return client.focus();
+        }
+      }
+      // Otherwise open a new window
+      if (self.clients.openWindow) {
+        return self.clients.openWindow(targetUrl);
+      }
     })
   );
 });

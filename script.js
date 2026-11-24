@@ -25,7 +25,9 @@ const STORAGE_KEYS = {
   TASKS: 'studentflow_tasks_v2',
   OLD_TASKS: 'studentflow_tasks_v1',
   THEME: 'studentflow_theme_v1',
-  USER_NAME: 'studentflow_name_v1'
+  USER_NAME: 'studentflow_name_v1',
+  SETTINGS: 'studentflow_settings_v1',
+  REMINDERS: 'studentflow_reminders_v1'
 };
 
 // Titles of the original sample tasks to remove during v1 -> v2 migration
@@ -61,7 +63,8 @@ const state = {
   tasks: [],                  // Array of task objects
   filter: 'all',             // 'all' | 'pending' | 'completed'
   categoryFilter: 'all',     // 'all' | 'math' | 'science' | 'english' | 'history' | 'coding' | 'other' | 'custom:<norm>'
-  quickView: null,           // null | 'overdue' | 'today' | 'week'
+  quickView: null,           // null | 'overdue' | 'today' | 'week' | 'urgent'
+  bannerDismissed: false,    // Whether in-app due-soon banner was dismissed
   searchQuery: '',           // Filter query string
   sortBy: 'newest',          // 'newest' | 'due-date' | 'priority'
   editingTaskId: null,       // ID of task currently in inline-edit mode
@@ -76,6 +79,8 @@ const DOM = {
   html: document.documentElement,
   themeToggleBtn: document.getElementById('themeToggleBtn'),
   installAppBtn: document.getElementById('installAppBtn'),
+  notificationToggleBtn: document.getElementById('notificationToggleBtn'),
+  notificationBadge: document.getElementById('notificationBadge'),
   greetingContainer: document.querySelector('.greeting-container'),
   greetingDisplay: document.getElementById('greetingDisplay'),
   greetingPrefix: document.getElementById('greetingPrefix'),
@@ -106,8 +111,16 @@ const DOM = {
   customSubjectsDatalist: document.getElementById('customSubjectsDatalist'),
   taskPrioritySelect: document.getElementById('taskPrioritySelect'),
   taskDueDateInput: document.getElementById('taskDueDateInput'),
+  taskDueTimeInput: document.getElementById('taskDueTimeInput'),
   titleErrorMsg: document.getElementById('titleErrorMsg'),
   titleErrorText: document.getElementById('titleErrorText'),
+
+  // In-app Due Soon / Overdue Banner
+  dueSoonBanner: document.getElementById('dueSoonBanner'),
+  dueBannerTitle: document.getElementById('dueBannerTitle'),
+  dueBannerMsg: document.getElementById('dueBannerMsg'),
+  dueBannerFilterBtn: document.getElementById('dueBannerFilterBtn'),
+  dueBannerDismissBtn: document.getElementById('dueBannerDismissBtn'),
 
   // Search, Filters & Quick Views
   searchInput: document.getElementById('searchInput'),
@@ -144,6 +157,21 @@ const DOM = {
   modalDialogTitle: document.getElementById('modalDialogTitle'),
   modalDialogDesc: document.getElementById('modalDialogDesc'),
 
+  // Reminder Settings Modal
+  reminderSettingsModal: document.getElementById('reminderSettingsModal'),
+  reminderModalBackdrop: document.getElementById('reminderModalBackdrop'),
+  reminderModalCloseBtn: document.getElementById('reminderModalCloseBtn'),
+  reminderModalDoneBtn: document.getElementById('reminderModalDoneBtn'),
+  reminderPermBadge: document.getElementById('reminderPermBadge'),
+  reminderBlockedHelp: document.getElementById('reminderBlockedHelp'),
+  reminderMasterToggle: document.getElementById('reminderMasterToggle'),
+  reminderLeadTimeSelect: document.getElementById('reminderLeadTimeSelect'),
+  reminderQuietHoursToggle: document.getElementById('reminderQuietHoursToggle'),
+  quietHoursTimesRow: document.getElementById('quietHoursTimesRow'),
+  quietHoursStartInput: document.getElementById('quietHoursStartInput'),
+  quietHoursEndInput: document.getElementById('quietHoursEndInput'),
+  sendTestNotificationBtn: document.getElementById('sendTestNotificationBtn'),
+
   // Toast Container
   toastRegion: document.getElementById('toastRegion')
 };
@@ -167,6 +195,22 @@ function sanitizeTask(item) {
     ? item.customSubject.trim().replace(/\s+/g, ' ').slice(0, 30)
     : '';
 
+  let dueDate = '';
+  if (typeof item.dueDate === 'string') {
+    const trimmedDate = item.dueDate.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
+      dueDate = trimmedDate;
+    }
+  }
+
+  let dueTime = '';
+  if (typeof item.dueTime === 'string') {
+    const trimmedTime = item.dueTime.trim();
+    if (/^([01]\d|2[0-3]):[0-5]\d$/.test(trimmedTime)) {
+      dueTime = trimmedTime;
+    }
+  }
+
   return {
     id: item.id,
     title: title,
@@ -174,7 +218,8 @@ function sanitizeTask(item) {
     priority: ['low', 'medium', 'high'].includes(item.priority) ? item.priority : 'medium',
     category: CATEGORIES[item.category] ? item.category : 'other',
     customSubject: customSubject,
-    dueDate: typeof item.dueDate === 'string' ? item.dueDate : '',
+    dueDate: dueDate,
+    dueTime: dueTime,
     createdAt: typeof item.createdAt === 'number' ? item.createdAt : Date.now()
   };
 }
@@ -298,6 +343,113 @@ function saveThemeToStorage(theme) {
   }
 }
 
+const DEFAULT_SETTINGS = {
+  enabled: false,
+  leadTimeHours: 5,
+  quietHoursEnabled: false,
+  quietHoursStart: '22:00',
+  quietHoursEnd: '08:00'
+};
+
+/**
+ * Load reminder settings from LocalStorage ('studentflow_settings_v1') with fallback.
+ */
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.SETTINGS);
+    if (!raw) return { ...DEFAULT_SETTINGS };
+    const parsed = JSON.parse(raw);
+    const leadNum = Number(parsed.leadTimeHours);
+    return {
+      enabled: Boolean(parsed.enabled),
+      leadTimeHours: [1, 3, 5, 12, 24].includes(leadNum) ? leadNum : 5,
+      quietHoursEnabled: Boolean(parsed.quietHoursEnabled),
+      quietHoursStart: typeof parsed.quietHoursStart === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(parsed.quietHoursStart) ? parsed.quietHoursStart : '22:00',
+      quietHoursEnd: typeof parsed.quietHoursEnd === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(parsed.quietHoursEnd) ? parsed.quietHoursEnd : '08:00'
+    };
+  } catch (err) {
+    console.warn('Failed to load settings:', err);
+    return { ...DEFAULT_SETTINGS };
+  }
+}
+
+/**
+ * Save reminder settings to LocalStorage with try/catch.
+ */
+function saveSettings(settings) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+  } catch (err) {
+    console.warn('Failed to save settings:', err);
+  }
+}
+
+/**
+ * Load reminder notification records { [taskId]: { soon: deadlineStamp, overdue: deadlineStamp } }
+ */
+function loadRemindersLog() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.REMINDERS);
+    return raw ? JSON.parse(raw) : {};
+  } catch (err) {
+    return {};
+  }
+}
+
+/**
+ * Save reminder notification records to LocalStorage ('studentflow_reminders_v1').
+ */
+function saveRemindersLog(log) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.REMINDERS, JSON.stringify(log));
+  } catch (err) {
+    console.warn('Failed to save reminders log:', err);
+  }
+}
+
+/**
+ * Reset a task's reminder log (e.g. when due date/time changes or marked pending again).
+ */
+function resetTaskReminderRecord(taskId) {
+  const log = loadRemindersLog();
+  if (log[taskId]) {
+    delete log[taskId];
+    saveRemindersLog(log);
+  }
+}
+
+/**
+ * Delete a task's reminder log when task is deleted.
+ */
+function deleteTaskReminderRecord(taskId) {
+  resetTaskReminderRecord(taskId);
+}
+
+/**
+ * Check if the given time falls within quiet hours (works across midnight).
+ */
+function isQuietHours(settings, now = new Date()) {
+  if (!settings || !settings.quietHoursEnabled) return false;
+  const startParts = (settings.quietHoursStart || '22:00').split(':').map(Number);
+  const endParts = (settings.quietHoursEnd || '08:00').split(':').map(Number);
+  if (startParts.length < 2 || endParts.length < 2 || startParts.some(isNaN) || endParts.some(isNaN)) {
+    return false;
+  }
+
+  const currentMinutes = now.getHours() * 60 + now.getMinutes();
+  const startMinutes = startParts[0] * 60 + startParts[1];
+  const endMinutes = endParts[0] * 60 + endParts[1];
+
+  if (startMinutes < endMinutes) {
+    // Same day range (e.g. 09:00 to 17:00)
+    return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+  } else if (startMinutes > endMinutes) {
+    // Across midnight range (e.g. 22:00 to 08:00)
+    return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+  }
+  return false;
+}
+
 /* ==========================================================================
    3. UTILITY & DATE HELPERS
    ========================================================================== */
@@ -328,6 +480,17 @@ function generateId() {
 function formatTodayDate() {
   const options = { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' };
   return new Intl.DateTimeFormat('en-US', options).format(new Date());
+}
+
+/**
+ * Return formatted YYYY-MM-DD string for today's local date.
+ */
+function getTodayDateKey() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 /**
@@ -420,6 +583,67 @@ function getSubjectColorClass(name) {
 }
 
 /**
+ * Parse a task's dueDate ("YYYY-MM-DD") and dueTime ("HH:MM") in local time
+ * without UTC conversion errors.
+ * If dueTime is omitted, deadline is 23:59:59.999 of that local day.
+ */
+function getTaskDeadlineDate(dueDateStr, dueTimeStr) {
+  if (!dueDateStr) return null;
+  const dateParts = dueDateStr.split('-').map(Number);
+  if (dateParts.length !== 3 || dateParts.some(isNaN)) return null;
+  const [year, month, day] = dateParts;
+
+  let hour = 23;
+  let minute = 59;
+  let second = 59;
+  let millisecond = 999;
+
+  if (dueTimeStr && typeof dueTimeStr === 'string') {
+    const timeParts = dueTimeStr.split(':').map(Number);
+    if (timeParts.length >= 2 && !isNaN(timeParts[0]) && !isNaN(timeParts[1])) {
+      hour = timeParts[0];
+      minute = timeParts[1];
+      second = 0;
+      millisecond = 0;
+    }
+  }
+
+  return new Date(year, month - 1, day, hour, minute, second, millisecond);
+}
+
+function getTaskDeadlineTimestamp(dueDateStr, dueTimeStr) {
+  const d = getTaskDeadlineDate(dueDateStr, dueTimeStr);
+  return d ? d.getTime() : null;
+}
+
+/**
+ * Format "HH:MM" 24h string into friendly local time string e.g. "6:00 PM"
+ */
+function formatTimeDisplay(dueTimeStr) {
+  if (!dueTimeStr) return '';
+  const parts = dueTimeStr.split(':').map(Number);
+  if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) return '';
+  const hour = parts[0];
+  const minute = parts[1];
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  const displayHour = hour % 12 || 12;
+  const displayMinute = String(minute).padStart(2, '0');
+  return `${displayHour}:${displayMinute} ${ampm}`;
+}
+
+/**
+ * Format due date and time e.g. "Tue, 25 Nov · 6:00 PM" or "Tue, 25 Nov"
+ */
+function formatTaskDueDateTime(year, month, day, dueTimeStr) {
+  const d = new Date(year, month - 1, day);
+  const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'short' }).format(d);
+  const monthName = new Intl.DateTimeFormat('en-US', { month: 'short' }).format(d);
+  const dateStr = `${weekday}, ${day} ${monthName}`;
+  const timeStr = formatTimeDisplay(dueTimeStr);
+  return timeStr ? `${dateStr} · ${timeStr}` : dateStr;
+}
+
+/**
  * Calculate calendar day difference between a task's due date and today.
  */
 function getTaskDiffDays(task) {
@@ -427,73 +651,80 @@ function getTaskDiffDays(task) {
   const parts = task.dueDate.split('-').map(Number);
   if (parts.length !== 3 || parts.some(isNaN)) return null;
   const [year, month, day] = parts;
-  const dueDate = new Date(year, month - 1, day);
   const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const diffTime = dueDate.getTime() - today.getTime();
-  return Math.round(diffTime / (1000 * 60 * 60 * 24));
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const taskDayStart = new Date(year, month - 1, day, 0, 0, 0, 0);
+  return Math.round((taskDayStart.getTime() - todayStart.getTime()) / (1000 * 60 * 60 * 24));
 }
 
 /**
  * Calculate due date relative status accurately.
- * We parse Year, Month, and Day directly from 'YYYY-MM-DD' to prevent
- * timezone conversion bugs between UTC and user's local machine.
+ * Respects local deadline. A task due today at 6:00 PM becomes overdue only after 6:00 PM.
  * 
- * Returns: { status: 'overdue' | 'today' | 'tomorrow' | 'upcoming', label, formatted }
+ * Returns: { status: 'overdue' | 'today' | 'tomorrow' | 'upcoming', label, className }
  */
-function getDueDateStatus(dueDateStr, isCompleted = false) {
+function getDueDateStatus(dueDateStr, dueTimeStr = '', isCompleted = false) {
   if (!dueDateStr) return null;
 
   const parts = dueDateStr.split('-').map(Number);
   if (parts.length !== 3 || parts.some(isNaN)) return null;
 
   const [year, month, day] = parts;
-  const dueDate = new Date(year, month - 1, day);
+  const deadlineDate = getTaskDeadlineDate(dueDateStr, dueTimeStr);
+  if (!deadlineDate) return null;
 
   const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+  const taskDayStart = new Date(year, month - 1, day, 0, 0, 0, 0);
 
-  // Time difference in calendar days
-  const diffTime = dueDate.getTime() - today.getTime();
-  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+  // Calendar day diff: 0 = today, 1 = tomorrow, -1 = yesterday
+  const diffDays = Math.round((taskDayStart.getTime() - todayStart.getTime()) / (1000 * 60 * 60 * 24));
+  const formattedDateTime = formatTaskDueDateTime(year, month, day, dueTimeStr);
+  const formattedTime = formatTimeDisplay(dueTimeStr);
 
-  // Friendly short date representation (e.g. "Nov 25")
-  const formattedDate = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' }).format(dueDate);
-
-  // If already completed, we show a neutral date badge rather than alarm
   if (isCompleted) {
     return {
       status: 'upcoming',
-      label: `Due ${formattedDate}`,
+      label: `Due ${formattedDateTime}`,
       className: 'badge-due-upcoming'
     };
   }
 
-  if (diffDays < 0) {
-    const daysAgo = Math.abs(diffDays);
-    const agoLabel = daysAgo === 1 ? '1 day overdue' : `${daysAgo} days overdue`;
+  // Exact overdue check against local deadline
+  const isOverdue = now.getTime() >= deadlineDate.getTime();
+
+  if (isOverdue) {
+    let overdueLabel = '⚠️ Overdue';
+    if (diffDays < 0) {
+      const daysAgo = Math.abs(diffDays);
+      overdueLabel = daysAgo === 1 ? '⚠️ Overdue (1 day overdue)' : `⚠️ Overdue (${daysAgo} days overdue)`;
+    } else if (diffDays === 0) {
+      overdueLabel = formattedTime ? `⚠️ Overdue (${formattedTime})` : '⚠️ Overdue';
+    }
     return {
       status: 'overdue',
-      label: `⚠️ Overdue (${agoLabel})`,
+      label: overdueLabel,
       className: 'badge-due-overdue'
     };
-  } else if (diffDays === 0) {
+  }
+
+  // Not overdue: today, tomorrow, or future
+  if (diffDays === 0) {
     return {
       status: 'today',
-      label: '⏳ Due today',
+      label: formattedTime ? `⏳ Due today · ${formattedTime}` : '⏳ Due today',
       className: 'badge-due-today'
     };
   } else if (diffDays === 1) {
     return {
       status: 'tomorrow',
-      label: '📅 Due tomorrow',
+      label: formattedTime ? `📅 Due tomorrow · ${formattedTime}` : '📅 Due tomorrow',
       className: 'badge-due-tomorrow'
     };
   } else {
     return {
       status: 'upcoming',
-      label: `📅 Due ${formattedDate}`,
+      label: `📅 Due ${formattedDateTime}`,
       className: 'badge-due-upcoming'
     };
   }
@@ -733,7 +964,11 @@ function render() {
 
   // 6. Update Quick Date Filter Counts
   // Overdue count applies ONLY to pending tasks (per requirements)
-  const overdueCount = state.tasks.filter(t => !t.completed && getTaskDiffDays(t) !== null && getTaskDiffDays(t) < 0).length;
+  const overdueCount = state.tasks.filter(t => {
+    if (t.completed || !t.dueDate) return false;
+    const s = getDueDateStatus(t.dueDate, t.dueTime, false);
+    return s && s.status === 'overdue';
+  }).length;
   const todayCount = state.tasks.filter(t => getTaskDiffDays(t) === 0).length;
   const weekCount = state.tasks.filter(t => {
     const d = getTaskDiffDays(t);
@@ -779,11 +1014,19 @@ function render() {
     if (state.quickView) {
       const diff = getTaskDiffDays(task);
       if (state.quickView === 'overdue') {
-        if (task.completed || diff === null || diff >= 0) return false;
+        const s = getDueDateStatus(task.dueDate, task.dueTime, task.completed);
+        if (!s || s.status !== 'overdue') return false;
       } else if (state.quickView === 'today') {
         if (diff !== 0) return false;
       } else if (state.quickView === 'week') {
         if (diff === null || diff < 0 || diff > 7) return false;
+      } else if (state.quickView === 'urgent') {
+        if (task.completed || !task.dueDate) return false;
+        const deadlineStamp = getTaskDeadlineTimestamp(task.dueDate, task.dueTime);
+        if (!deadlineStamp) return false;
+        const settings = loadSettings();
+        const leadTimeMs = (settings.leadTimeHours || 5) * 60 * 60 * 1000;
+        if (Date.now() < deadlineStamp - leadTimeMs) return false;
       }
     }
 
@@ -814,12 +1057,14 @@ function render() {
     }
 
     if (state.sortBy === 'due-date') {
-      // Tasks with due dates come first (closest due date first)
-      if (a.dueDate && b.dueDate) {
-        return a.dueDate.localeCompare(b.dueDate);
+      const deadlineA = getTaskDeadlineTimestamp(a.dueDate, a.dueTime);
+      const deadlineB = getTaskDeadlineTimestamp(b.dueDate, b.dueTime);
+      if (deadlineA !== null && deadlineB !== null) {
+        if (deadlineA !== deadlineB) return deadlineA - deadlineB;
+        return b.createdAt - a.createdAt;
       }
-      if (a.dueDate && !b.dueDate) return -1;
-      if (!a.dueDate && b.dueDate) return 1;
+      if (deadlineA !== null && deadlineB === null) return -1;
+      if (deadlineA === null && deadlineB !== null) return 1;
       return b.createdAt - a.createdAt;
     }
 
@@ -837,6 +1082,10 @@ function render() {
 
   // 12. Render Task List or Friendly Contextual Empty State
   renderTaskList(filteredTasks, totalCount, completedCount, pendingCount);
+
+  // 13. Update Notification Badge indicator & Due Soon Banner
+  updateNotificationButtonState();
+  updateDueSoonBanner();
 }
 
 /**
@@ -1005,7 +1254,7 @@ function createTaskItemElement(task) {
   metaRow.appendChild(priBadge);
 
   // Due Date Badge (with Overdue / Due today / Due tomorrow status)
-  const dueStatus = getDueDateStatus(task.dueDate, task.completed);
+  const dueStatus = getDueDateStatus(task.dueDate, task.dueTime, task.completed);
   if (dueStatus) {
     const dueBadge = document.createElement('span');
     dueBadge.className = `badge ${dueStatus.className}`;
@@ -1016,9 +1265,31 @@ function createTaskItemElement(task) {
   details.appendChild(metaRow);
   li.appendChild(details);
 
-  // 3. Action Buttons (Edit and Delete)
+  // 3. Action Buttons (Calendar, Edit and Delete)
   const actions = document.createElement('div');
   actions.className = 'task-actions';
+
+  // Calendar (.ics) Download Button for pending tasks with a due date
+  if (!task.completed && task.dueDate) {
+    const calBtn = document.createElement('button');
+    calBtn.type = 'button';
+    calBtn.className = 'action-btn calendar-btn';
+    calBtn.setAttribute('aria-label', `Add to calendar: ${escapeHTML(task.title)}`);
+    calBtn.title = 'Add to calendar (.ics)';
+    calBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+        <line x1="16" y1="2" x2="16" y2="6"/>
+        <line x1="8" y1="2" x2="8" y2="6"/>
+        <line x1="3" y1="10" x2="21" y2="10"/>
+      </svg>
+    `;
+    calBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      handleDownloadCalendarEvent(task);
+    });
+    actions.appendChild(calBtn);
+  }
 
   // Edit Button
   const editBtn = document.createElement('button');
@@ -1134,9 +1405,18 @@ function createInlineEditElement(task) {
   // Due Date input
   const dateInput = document.createElement('input');
   dateInput.type = 'date';
-  dateInput.className = 'text-input compact-select';
+  dateInput.className = 'text-input compact-select date-input';
   dateInput.value = task.dueDate || '';
+  dateInput.setAttribute('aria-label', 'Edit due date');
   optionsRow.appendChild(dateInput);
+
+  // Due Time input
+  const timeInput = document.createElement('input');
+  timeInput.type = 'time';
+  timeInput.className = 'text-input compact-select time-input';
+  timeInput.value = task.dueTime || '';
+  timeInput.setAttribute('aria-label', 'Edit due time');
+  optionsRow.appendChild(timeInput);
 
   // Actions row (Save & Cancel buttons)
   const actionsRow = document.createElement('div');
@@ -1153,7 +1433,7 @@ function createInlineEditElement(task) {
   saveBtn.className = 'btn edit-save-btn';
   saveBtn.textContent = 'Save Changes (Enter)';
   saveBtn.addEventListener('click', () => {
-    handleSaveEdit(task.id, titleInput.value, catSelect.value, priSelect.value, dateInput.value, customSubjInput.value);
+    handleSaveEdit(task.id, titleInput.value, catSelect.value, priSelect.value, dateInput.value, timeInput.value, customSubjInput.value);
   });
 
   actionsRow.appendChild(cancelBtn);
@@ -1163,7 +1443,7 @@ function createInlineEditElement(task) {
   editContainer.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') {
       e.preventDefault();
-      handleSaveEdit(task.id, titleInput.value, catSelect.value, priSelect.value, dateInput.value, customSubjInput.value);
+      handleSaveEdit(task.id, titleInput.value, catSelect.value, priSelect.value, dateInput.value, timeInput.value, customSubjInput.value);
     } else if (e.key === 'Escape') {
       e.preventDefault();
       handleCancelEdit();
@@ -1218,6 +1498,14 @@ function handleAddTask(e) {
   // Clear any existing inline error
   hideFormError();
 
+  let dueTime = '';
+  if (DOM.taskDueTimeInput && typeof DOM.taskDueTimeInput.value === 'string') {
+    const trimmedTime = DOM.taskDueTimeInput.value.trim();
+    if (/^([01]\d|2[0-3]):[0-5]\d$/.test(trimmedTime)) {
+      dueTime = trimmedTime;
+    }
+  }
+
   const newTask = {
     id: generateId(),
     title: title,
@@ -1226,6 +1514,7 @@ function handleAddTask(e) {
     category: category,
     customSubject: customSubj,
     dueDate: DOM.taskDueDateInput.value || '',
+    dueTime: dueTime,
     createdAt: Date.now()
   };
 
@@ -1233,13 +1522,16 @@ function handleAddTask(e) {
   state.tasks.unshift(newTask);
   saveTasksToStorage();
 
-  // Reset task title and due date, but PRESERVE chosen subject and custom subject
+  // Reset task title and due date/time, but PRESERVE chosen subject and custom subject
   DOM.taskTitleInput.value = '';
   DOM.taskDueDateInput.value = '';
+  if (DOM.taskDueTimeInput) DOM.taskDueTimeInput.value = '';
   DOM.taskTitleInput.focus();
 
   showToast('Task added successfully! 🎯', 'success');
   render();
+
+  checkAndNotifyDueTasks();
 }
 
 /**
@@ -1267,11 +1559,17 @@ function handleToggleTask(taskId) {
   if (!task) return;
 
   task.completed = !task.completed;
+  if (!task.completed) {
+    // Reset reminder record so user can receive advance / overdue notifications again if applicable
+    resetTaskReminderRecord(task.id);
+  }
   saveTasksToStorage();
 
   const message = task.completed ? 'Task marked as completed! 🌟' : 'Task marked as pending.';
   showToast(message, 'info');
   render();
+
+  checkAndNotifyDueTasks();
 }
 
 /**
@@ -1282,6 +1580,9 @@ function handleDeleteTask(taskId) {
   if (taskIndex === -1) return;
 
   const deletedTask = state.tasks[taskIndex];
+
+  // Clean up reminder tracking record for deleted task
+  deleteTaskReminderRecord(taskId);
 
   // Store deleted task reference in state for Undo
   state.lastDeletedTask = {
@@ -1299,6 +1600,7 @@ function handleDeleteTask(taskId) {
   }
 
   render();
+  checkAndNotifyDueTasks();
 
   // Show Toast with active Undo button (~5 seconds)
   showToast(
@@ -1320,6 +1622,9 @@ function handleUndoDelete() {
 
   const { task, originalIndex } = state.lastDeletedTask;
 
+  // Reset reminder record to recalculate
+  resetTaskReminderRecord(task.id);
+
   // Insert back at original index or end of array
   const insertIndex = Math.min(originalIndex, state.tasks.length);
   state.tasks.splice(insertIndex, 0, task);
@@ -1329,6 +1634,7 @@ function handleUndoDelete() {
 
   saveTasksToStorage();
   render();
+  checkAndNotifyDueTasks();
   showToast('Task restored! ↩️', 'success');
 }
 
@@ -1343,7 +1649,7 @@ function handleStartEdit(taskId) {
 /**
  * Save inline edited changes for a task.
  */
-function handleSaveEdit(taskId, newTitle, newCategory, newPriority, newDueDate, newCustomSubject) {
+function handleSaveEdit(taskId, newTitle, newCategory, newPriority, newDueDate, newDueTime, newCustomSubject) {
   const trimmedTitle = newTitle.trim();
   if (!trimmedTitle) {
     showToast('Task title cannot be empty.', 'danger');
@@ -1359,18 +1665,33 @@ function handleSaveEdit(taskId, newTitle, newCategory, newPriority, newDueDate, 
     }
   }
 
+  let formattedDueTime = '';
+  if (typeof newDueTime === 'string') {
+    const trimmedTime = newDueTime.trim();
+    if (/^([01]\d|2[0-3]):[0-5]\d$/.test(trimmedTime)) {
+      formattedDueTime = trimmedTime;
+    }
+  }
+
   const task = state.tasks.find(t => t.id === taskId);
   if (!task) return;
+
+  const dateOrTimeChanged = (task.dueDate !== (newDueDate || '')) || (task.dueTime !== formattedDueTime);
+  if (dateOrTimeChanged) {
+    resetTaskReminderRecord(task.id);
+  }
 
   task.title = trimmedTitle;
   task.category = newCategory || 'other';
   task.customSubject = formattedCustomSubject;
   task.priority = newPriority || 'medium';
   task.dueDate = newDueDate || '';
+  task.dueTime = formattedDueTime;
 
   state.editingTaskId = null;
   saveTasksToStorage();
   render();
+  checkAndNotifyDueTasks();
   showToast('Task updated! ✏️', 'success');
 }
 
@@ -1517,6 +1838,132 @@ function handleImportTasks(e) {
   };
 
   reader.readAsText(file);
+}
+
+/**
+ * Escape text according to RFC 5545 section 3.3.11.
+ */
+function escapeIcsText(str) {
+  if (typeof str !== 'string') return '';
+  return str
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\r?\n/g, '\\n');
+}
+
+/**
+ * Format UTC Date to iCalendar ISO 8601 UTC string (YYYYMMDDTHHMMSSZ).
+ */
+function formatUtcIcsDateTime(date) {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const d = String(date.getUTCDate()).padStart(2, '0');
+  const h = String(date.getUTCHours()).padStart(2, '0');
+  const min = String(date.getUTCMinutes()).padStart(2, '0');
+  const s = String(date.getUTCSeconds()).padStart(2, '0');
+  return `${y}${m}${d}T${h}${min}${s}Z`;
+}
+
+/**
+ * Generate a clean URL-friendly slug from a string.
+ */
+function slugifyText(text) {
+  return (text || 'task')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 30) || 'task';
+}
+
+/**
+ * Handle exporting a single task as a valid RFC 5545 .ics iCalendar file.
+ */
+function handleDownloadCalendarEvent(task) {
+  if (!task || !task.dueDate) return;
+
+  try {
+    const slug = slugifyText(task.title);
+    const filename = `studentflow-${slug}.ics`;
+    const dtstamp = formatUtcIcsDateTime(new Date());
+
+    let subjectLabel = 'General / Other';
+    if (task.category === 'other' && task.customSubject) {
+      subjectLabel = formatSubjectDisplay(task.customSubject);
+    } else if (CATEGORIES[task.category]) {
+      subjectLabel = CATEGORIES[task.category].label;
+    }
+
+    const priorityLabel = PRIORITIES[task.priority] ? PRIORITIES[task.priority].label : task.priority;
+    const summary = `${task.title} (${subjectLabel})`;
+    const description = `Subject: ${subjectLabel}\nPriority: ${priorityLabel}\nStatus: Pending\nManaged in StudentFlow`;
+
+    const settings = loadSettings();
+    const leadHours = settings.leadTimeHours || 5;
+
+    let dtStartLine = '';
+    let dtEndLine = '';
+
+    if (task.dueTime) {
+      const deadlineDate = getTaskDeadlineDate(task.dueDate, task.dueTime);
+      if (!deadlineDate) return;
+      dtStartLine = `DTSTART:${formatUtcIcsDateTime(deadlineDate)}`;
+      const endDate = new Date(deadlineDate.getTime() + 30 * 60 * 1000);
+      dtEndLine = `DTEND:${formatUtcIcsDateTime(endDate)}`;
+    } else {
+      const [y, m, d] = task.dueDate.split('-');
+      const dObj = new Date(Number(y), Number(m) - 1, Number(d));
+      const nextDay = new Date(dObj.getTime() + 24 * 60 * 60 * 1000);
+      const nextY = nextDay.getFullYear();
+      const nextM = String(nextDay.getMonth() + 1).padStart(2, '0');
+      const nextD = String(nextDay.getDate()).padStart(2, '0');
+      dtStartLine = `DTSTART;VALUE=DATE:${y}${m}${d}`;
+      dtEndLine = `DTEND;VALUE=DATE:${nextY}${nextM}${nextD}`;
+    }
+
+    const lines = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//StudentFlow//Academic Task Manager//EN',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'BEGIN:VEVENT',
+      `UID:${task.id}@studentflow`,
+      `DTSTAMP:${dtstamp}`,
+      dtStartLine,
+      dtEndLine,
+      `SUMMARY:${escapeIcsText(summary)}`,
+      `DESCRIPTION:${escapeIcsText(description)}`,
+      'BEGIN:VALARM',
+      `TRIGGER:-PT${leadHours}H`,
+      'ACTION:DISPLAY',
+      `DESCRIPTION:${escapeIcsText(`Reminder: ${task.title} is due in ${leadHours} hour${leadHours === 1 ? '' : 's'}`)}`,
+      'END:VALARM',
+      'BEGIN:VALARM',
+      'TRIGGER:-PT1H',
+      'ACTION:DISPLAY',
+      `DESCRIPTION:${escapeIcsText(`Reminder: ${task.title} is due in 1 hour`)}`,
+      'END:VALARM',
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ];
+
+    const icsContent = lines.join('\r\n') + '\r\n';
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+
+    showToast('Calendar event downloaded. Open it to add reminders to your calendar.', 'success');
+  } catch (err) {
+    console.error('Failed to create calendar event:', err);
+    showToast('Could not generate calendar file.', 'danger');
+  }
 }
 
 let isCancellingName = false;
@@ -1750,6 +2197,13 @@ function registerServiceWorker() {
           console.info('ServiceWorker skipped (requires http/https origin):', err.message);
         });
     });
+
+    // Listen for messages dispatched by ServiceWorker (e.g. notification click focus)
+    navigator.serviceWorker.addEventListener('message', (event) => {
+      if (event.data && event.data.type === 'FOCUS_TASK' && event.data.taskId) {
+        handleNavigateToTask(event.data.taskId);
+      }
+    });
   }
 }
 
@@ -1795,6 +2249,709 @@ function setupPWAInstallation() {
 }
 
 /**
+ * Open Reminder Settings modal dialog.
+ */
+function openReminderSettingsModal() {
+  if (!DOM.reminderSettingsModal) return;
+  syncReminderSettingsUI();
+  DOM.reminderSettingsModal.removeAttribute('hidden');
+  if (DOM.reminderMasterToggle && !DOM.reminderMasterToggle.disabled) {
+    DOM.reminderMasterToggle.focus();
+  } else if (DOM.reminderModalCloseBtn) {
+    DOM.reminderModalCloseBtn.focus();
+  }
+}
+
+/**
+ * Close Reminder Settings modal dialog.
+ */
+function closeReminderSettingsModal() {
+  if (!DOM.reminderSettingsModal) return;
+  DOM.reminderSettingsModal.setAttribute('hidden', '');
+  if (DOM.notificationToggleBtn) {
+    DOM.notificationToggleBtn.focus();
+  }
+}
+
+/**
+ * Sync Reminder Settings modal UI elements with current permission and saved settings.
+ */
+function syncReminderSettingsUI() {
+  const settings = loadSettings();
+
+  // Permission badge & blocked notice
+  if (!('Notification' in window)) {
+    if (DOM.reminderPermBadge) {
+      DOM.reminderPermBadge.textContent = 'Unsupported';
+      DOM.reminderPermBadge.className = 'badge perm-badge denied';
+    }
+    if (DOM.reminderMasterToggle) {
+      DOM.reminderMasterToggle.disabled = true;
+      DOM.reminderMasterToggle.checked = false;
+    }
+    if (DOM.reminderBlockedHelp) DOM.reminderBlockedHelp.setAttribute('hidden', '');
+  } else {
+    const perm = Notification.permission;
+    if (DOM.reminderPermBadge) {
+      if (perm === 'granted') {
+        DOM.reminderPermBadge.textContent = 'Allowed';
+        DOM.reminderPermBadge.className = 'badge perm-badge granted';
+      } else if (perm === 'denied') {
+        DOM.reminderPermBadge.textContent = 'Blocked';
+        DOM.reminderPermBadge.className = 'badge perm-badge denied';
+      } else {
+        DOM.reminderPermBadge.textContent = 'Default';
+        DOM.reminderPermBadge.className = 'badge perm-badge default';
+      }
+    }
+
+    if (perm === 'denied') {
+      if (DOM.reminderBlockedHelp) DOM.reminderBlockedHelp.removeAttribute('hidden');
+      if (DOM.reminderMasterToggle) {
+        DOM.reminderMasterToggle.disabled = true;
+        DOM.reminderMasterToggle.checked = false;
+      }
+    } else {
+      if (DOM.reminderBlockedHelp) DOM.reminderBlockedHelp.setAttribute('hidden', '');
+      if (DOM.reminderMasterToggle) {
+        DOM.reminderMasterToggle.disabled = false;
+        DOM.reminderMasterToggle.checked = Boolean(settings.enabled && perm === 'granted');
+      }
+    }
+  }
+
+  // Lead Time Select
+  if (DOM.reminderLeadTimeSelect) {
+    DOM.reminderLeadTimeSelect.value = String(settings.leadTimeHours || 5);
+  }
+
+  // Quiet Hours
+  if (DOM.reminderQuietHoursToggle) {
+    DOM.reminderQuietHoursToggle.checked = Boolean(settings.quietHoursEnabled);
+  }
+  if (DOM.quietHoursTimesRow) {
+    DOM.quietHoursTimesRow.hidden = !settings.quietHoursEnabled;
+  }
+  if (DOM.quietHoursStartInput) {
+    DOM.quietHoursStartInput.value = settings.quietHoursStart || '22:00';
+  }
+  if (DOM.quietHoursEndInput) {
+    DOM.quietHoursEndInput.value = settings.quietHoursEnd || '08:00';
+  }
+}
+
+/**
+ * Setup Reminder Settings modal event bindings.
+ */
+function setupReminderSettingsModal() {
+  if (!DOM.reminderSettingsModal) return;
+
+  // Open modal from notification bell button
+  if (DOM.notificationToggleBtn) {
+    DOM.notificationToggleBtn.addEventListener('click', openReminderSettingsModal);
+  }
+
+  // Close modal via close button, Done button, or backdrop click
+  if (DOM.reminderModalCloseBtn) {
+    DOM.reminderModalCloseBtn.addEventListener('click', closeReminderSettingsModal);
+  }
+  if (DOM.reminderModalDoneBtn) {
+    DOM.reminderModalDoneBtn.addEventListener('click', closeReminderSettingsModal);
+  }
+  if (DOM.reminderModalBackdrop) {
+    DOM.reminderModalBackdrop.addEventListener('click', closeReminderSettingsModal);
+  }
+
+  // Escape key closes modal
+  DOM.reminderSettingsModal.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeReminderSettingsModal();
+    }
+  });
+
+  // Master on/off toggle (Permission is requested ONLY on this click)
+  if (DOM.reminderMasterToggle) {
+    DOM.reminderMasterToggle.addEventListener('change', async () => {
+      if (!('Notification' in window)) {
+        showToast('Desktop notifications are not supported in this browser.', 'info');
+        DOM.reminderMasterToggle.checked = false;
+        return;
+      }
+
+      const perm = Notification.permission;
+      if (perm === 'denied') {
+        DOM.reminderMasterToggle.checked = false;
+        showToast('Notifications are blocked by your browser settings. Please allow notifications in site permissions.', 'warning');
+        return;
+      }
+
+      if (perm === 'default') {
+        try {
+          const result = await Notification.requestPermission();
+          const settings = loadSettings();
+          if (result === 'granted') {
+            settings.enabled = true;
+            saveSettings(settings);
+            syncReminderSettingsUI();
+            updateNotificationButtonState();
+            showToast('🔔 Task reminders enabled!', 'success');
+            checkAndNotifyDueTasks();
+          } else {
+            settings.enabled = false;
+            saveSettings(settings);
+            syncReminderSettingsUI();
+            updateNotificationButtonState();
+            showToast('Notification permission was not granted.', 'info');
+          }
+        } catch (err) {
+          console.warn('Error requesting permission:', err);
+        }
+        return;
+      }
+
+      // Permission is already 'granted'
+      const isChecked = DOM.reminderMasterToggle.checked;
+      const settings = loadSettings();
+      settings.enabled = isChecked;
+      saveSettings(settings);
+      syncReminderSettingsUI();
+      updateNotificationButtonState();
+
+      if (isChecked) {
+        showToast('🔔 Task reminders enabled!', 'success');
+        checkAndNotifyDueTasks();
+      } else {
+        showToast('🔕 Task reminders paused.', 'info');
+      }
+    });
+  }
+
+  // Lead-time select change
+  if (DOM.reminderLeadTimeSelect) {
+    DOM.reminderLeadTimeSelect.addEventListener('change', () => {
+      const settings = loadSettings();
+      settings.leadTimeHours = Number(DOM.reminderLeadTimeSelect.value) || 5;
+      saveSettings(settings);
+      checkAndNotifyDueTasks();
+      updateDueSoonBanner();
+      showToast(`Advance reminders set to ${settings.leadTimeHours} hour${settings.leadTimeHours === 1 ? '' : 's'} before deadline.`, 'info');
+    });
+  }
+
+  // Quiet hours toggle
+  if (DOM.reminderQuietHoursToggle) {
+    DOM.reminderQuietHoursToggle.addEventListener('change', () => {
+      const settings = loadSettings();
+      settings.quietHoursEnabled = DOM.reminderQuietHoursToggle.checked;
+      if (DOM.quietHoursTimesRow) {
+        DOM.quietHoursTimesRow.hidden = !settings.quietHoursEnabled;
+      }
+      saveSettings(settings);
+      checkAndNotifyDueTasks();
+      showToast(settings.quietHoursEnabled ? 'Quiet hours enabled.' : 'Quiet hours turned off.', 'info');
+    });
+  }
+
+  // Quiet hours start and end inputs
+  const handleQuietTimesChange = () => {
+    const settings = loadSettings();
+    if (DOM.quietHoursStartInput && DOM.quietHoursStartInput.value) {
+      settings.quietHoursStart = DOM.quietHoursStartInput.value;
+    }
+    if (DOM.quietHoursEndInput && DOM.quietHoursEndInput.value) {
+      settings.quietHoursEnd = DOM.quietHoursEndInput.value;
+    }
+    saveSettings(settings);
+    checkAndNotifyDueTasks();
+  };
+
+  if (DOM.quietHoursStartInput) DOM.quietHoursStartInput.addEventListener('change', handleQuietTimesChange);
+  if (DOM.quietHoursEndInput) DOM.quietHoursEndInput.addEventListener('change', handleQuietTimesChange);
+
+  // Send Test Notification button
+  if (DOM.sendTestNotificationBtn) {
+    DOM.sendTestNotificationBtn.addEventListener('click', async () => {
+      if (!('Notification' in window)) {
+        showToast('Desktop notifications are not supported in this browser.', 'info');
+        return;
+      }
+      if (Notification.permission === 'denied') {
+        showToast('Notifications are blocked by your browser settings.', 'warning');
+        return;
+      }
+      if (Notification.permission === 'default') {
+        const result = await Notification.requestPermission();
+        syncReminderSettingsUI();
+        if (result !== 'granted') {
+          showToast('Notification permission was not granted.', 'info');
+          return;
+        }
+      }
+
+      const totalCount = state.tasks.length;
+      const completedCount = state.tasks.filter(t => t.completed).length;
+      const targetCount = Math.min(totalCount, completedCount + 1);
+      const testBody = totalCount > 0
+        ? `You've completed ${completedCount} of ${totalCount} tasks. Finish this one to reach ${targetCount}/${totalCount}! 💪`
+        : `Start adding assignments to track your progress! 💪`;
+
+      sendNotification('⏰ StudentFlow Test Alert', {
+        body: testBody,
+        icon: './icon.svg',
+        badge: './icon.svg',
+        tag: 'studentflow-test',
+        renotify: true
+      });
+
+      showToast('Test notification dispatched! 🔔', 'info');
+    });
+  }
+
+  // Awareness Banner action buttons
+  if (DOM.dueBannerFilterBtn) {
+    DOM.dueBannerFilterBtn.addEventListener('click', () => {
+      state.quickView = state.quickView === 'urgent' ? null : 'urgent';
+      render();
+    });
+  }
+  if (DOM.dueBannerDismissBtn) {
+    DOM.dueBannerDismissBtn.addEventListener('click', () => {
+      state.bannerDismissed = true;
+      if (DOM.dueSoonBanner) DOM.dueSoonBanner.setAttribute('hidden', '');
+    });
+  }
+}
+
+/**
+ * Setup Desktop / System Task Due Reminders, URL Hash Deep-Linking, and Periodic 60s Check
+ */
+function setupNotifications() {
+  if (!DOM.notificationToggleBtn) return;
+
+  // Initialize reminder settings modal
+  setupReminderSettingsModal();
+
+  // Initial button state sync
+  updateNotificationButtonState();
+
+  // Check URL hash immediately in case app was launched with #task-<id>
+  checkUrlHash();
+
+  // Listen to hash changes (for in-page navigation or notification click navigation)
+  window.addEventListener('hashchange', checkUrlHash);
+
+  // Initial check for due tasks after small delay to let page stabilize
+  setTimeout(checkAndNotifyDueTasks, 1000);
+
+  // Periodic check every 60 seconds (per requirement)
+  setInterval(checkAndNotifyDueTasks, 60 * 1000);
+
+  // Check on tab focus / visibility change
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      updateGreetingDisplay();
+      checkAndNotifyDueTasks();
+      updateDueSoonBanner();
+    }
+  });
+}
+
+/**
+ * Update the visual state and accessibility attributes of the Notification button.
+ */
+function updateNotificationButtonState() {
+  if (!DOM.notificationToggleBtn) return;
+
+  if (!('Notification' in window)) {
+    DOM.notificationToggleBtn.classList.remove('active');
+    DOM.notificationToggleBtn.classList.add('blocked');
+    DOM.notificationToggleBtn.title = 'Desktop notifications are not supported in this browser';
+    DOM.notificationToggleBtn.setAttribute('aria-label', 'Desktop notifications not supported');
+    if (DOM.notificationBadge) DOM.notificationBadge.hidden = true;
+    return;
+  }
+
+  const permission = Notification.permission;
+  const settings = loadSettings();
+  const isEnabled = Boolean(settings.enabled && permission === 'granted');
+
+  if (permission === 'denied') {
+    DOM.notificationToggleBtn.classList.remove('active');
+    DOM.notificationToggleBtn.classList.add('blocked');
+    DOM.notificationToggleBtn.title = 'Notifications blocked in browser (click for settings)';
+    DOM.notificationToggleBtn.setAttribute('aria-label', 'Notifications blocked in browser. Click for settings.');
+  } else if (isEnabled) {
+    DOM.notificationToggleBtn.classList.remove('blocked');
+    DOM.notificationToggleBtn.classList.add('active');
+    DOM.notificationToggleBtn.title = 'Task reminders active (click for settings)';
+    DOM.notificationToggleBtn.setAttribute('aria-label', 'Task reminders active. Click for settings.');
+  } else {
+    DOM.notificationToggleBtn.classList.remove('active', 'blocked');
+    DOM.notificationToggleBtn.title = 'Task reminder settings (click to open)';
+    DOM.notificationToggleBtn.setAttribute('aria-label', 'Task reminder settings');
+  }
+
+  updateNotificationBadge();
+}
+
+/**
+ * Update the red notification indicator badge based on pending due / overdue tasks.
+ */
+function updateNotificationBadge() {
+  if (!DOM.notificationBadge) return;
+
+  const dueCount = state.tasks.filter(t => {
+    if (t.completed || !t.dueDate) return false;
+    const status = getDueDateStatus(t.dueDate, t.dueTime, false);
+    return status && (status.status === 'today' || status.status === 'overdue');
+  }).length;
+
+  DOM.notificationBadge.hidden = dueCount === 0;
+}
+
+/**
+ * Update the in-app Due Soon / Overdue banner, document title, and app badge.
+ */
+function updateDueSoonBanner() {
+  const settings = loadSettings();
+  const leadTimeMs = (settings.leadTimeHours || 5) * 60 * 60 * 1000;
+  const now = Date.now();
+
+  let dueSoonCount = 0;
+  let overdueCount = 0;
+
+  state.tasks.forEach(task => {
+    if (task.completed || !task.dueDate) return;
+    const deadlineStamp = getTaskDeadlineTimestamp(task.dueDate, task.dueTime);
+    if (!deadlineStamp) return;
+
+    if (now >= deadlineStamp) {
+      overdueCount++;
+    } else if (now >= deadlineStamp - leadTimeMs) {
+      dueSoonCount++;
+    }
+  });
+
+  const totalUrgent = dueSoonCount + overdueCount;
+
+  // 1. Update Document Title: "(n) StudentFlow"
+  const baseTitle = 'StudentFlow — Student Task Manager';
+  document.title = totalUrgent > 0 ? `(${totalUrgent}) ${baseTitle}` : baseTitle;
+
+  // 2. Set App Badge if supported (feature detection, silently catch errors)
+  if ('setAppBadge' in navigator) {
+    if (totalUrgent > 0) {
+      navigator.setAppBadge(totalUrgent).catch(() => {});
+    } else if ('clearAppBadge' in navigator) {
+      navigator.clearAppBadge().catch(() => {});
+    }
+  }
+
+  // 3. Update Banner UI
+  if (!DOM.dueSoonBanner) return;
+
+  if (totalUrgent > 0 && !state.bannerDismissed) {
+    DOM.dueSoonBanner.removeAttribute('hidden');
+
+    const leadHours = settings.leadTimeHours || 5;
+    const leadStr = leadHours === 24 ? '1 day' : `${leadHours} hours`;
+
+    let parts = [];
+    if (dueSoonCount > 0) {
+      parts.push(`${dueSoonCount} task${dueSoonCount === 1 ? '' : 's'} due within ${leadStr}`);
+    }
+    if (overdueCount > 0) {
+      parts.push(`${overdueCount} task${overdueCount === 1 ? '' : 's'} overdue`);
+    }
+
+    if (DOM.dueBannerMsg) {
+      DOM.dueBannerMsg.textContent = parts.join(', plus ') + '.';
+    }
+    if (DOM.dueBannerTitle) {
+      DOM.dueBannerTitle.textContent = overdueCount > 0 ? 'Urgent Deadlines' : 'Due Soon';
+    }
+    if (DOM.dueBannerFilterBtn) {
+      DOM.dueBannerFilterBtn.textContent = state.quickView === 'urgent' ? 'Show All' : 'Filter Tasks';
+    }
+  } else {
+    DOM.dueSoonBanner.setAttribute('hidden', '');
+  }
+}
+
+/**
+ * Check for tasks that need "due soon" or "overdue" stage notifications.
+ * Runs every 60 seconds, on load, on visibility change, and after add/edit/complete.
+ * Records dispatched notifications in localStorage 'studentflow_reminders_v1'
+ * as { [taskId]: { soon: deadlineStamp, overdue: deadlineStamp } }.
+ */
+function checkAndNotifyDueTasks() {
+  updateNotificationBadge();
+  updateDueSoonBanner();
+
+  const settings = loadSettings();
+
+  // If notifications not supported, denied, or disabled in settings, return
+  if (!('Notification' in window) || Notification.permission !== 'granted' || !settings.enabled) {
+    return;
+  }
+
+  // Quiet hours check (works across midnight)
+  if (isQuietHours(settings, new Date())) {
+    return;
+  }
+
+  const remindersLog = loadRemindersLog();
+  let logChanged = false;
+
+  const now = Date.now();
+  const leadTimeMs = (settings.leadTimeHours || 5) * 60 * 60 * 1000;
+
+  // Compute progress for friendly notification body
+  const totalCount = state.tasks.length;
+  const completedCount = state.tasks.filter(t => t.completed).length;
+  const targetCompleted = Math.min(totalCount, completedCount + 1);
+  const progressBody = totalCount > 0
+    ? `You've completed ${completedCount} of ${totalCount} tasks. Finish this one to reach ${targetCompleted}/${totalCount}! 💪`
+    : `Stay focused and finish your assignments strong! 💪`;
+
+  const pendingTasks = state.tasks.filter(t => !t.completed && t.dueDate);
+
+  pendingTasks.forEach(task => {
+    const deadlineDate = getTaskDeadlineDate(task.dueDate, task.dueTime);
+    if (!deadlineDate) return;
+
+    const deadlineStamp = deadlineDate.getTime();
+    if (!remindersLog[task.id]) {
+      remindersLog[task.id] = {};
+    }
+    const record = remindersLog[task.id];
+
+    // Stage 1: "due soon" notification (now >= deadline - leadTime && now < deadline)
+    if (now >= deadlineStamp - leadTimeMs && now < deadlineStamp) {
+      if (record.soon !== deadlineStamp) {
+        const remainingMs = deadlineStamp - now;
+        const remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
+        const hourLabel = remainingHours <= 1 ? '1 hour' : `${remainingHours} hours`;
+        const title = `⏰ "${task.title}" is due in ${hourLabel}`;
+
+        sendNotification(title, {
+          body: progressBody,
+          icon: './icon.svg',
+          badge: './icon.svg',
+          tag: `${task.id}_soon`,
+          data: { taskId: task.id },
+          renotify: true
+        });
+
+        record.soon = deadlineStamp;
+        logChanged = true;
+      }
+    }
+
+    // Stage 2: "overdue" notification (now >= deadline)
+    if (now >= deadlineStamp) {
+      if (record.overdue !== deadlineStamp) {
+        const title = `⚠️ "${task.title}" is overdue`;
+
+        sendNotification(title, {
+          body: progressBody,
+          icon: './icon.svg',
+          badge: './icon.svg',
+          tag: `${task.id}_overdue`,
+          data: { taskId: task.id },
+          renotify: true
+        });
+
+        record.overdue = deadlineStamp;
+        logChanged = true;
+      }
+    }
+  });
+
+  // Prune deleted tasks from the log
+  const currentTaskIds = new Set(state.tasks.map(t => t.id));
+  Object.keys(remindersLog).forEach(taskId => {
+    if (!currentTaskIds.has(taskId)) {
+      delete remindersLog[taskId];
+      logChanged = true;
+    }
+  });
+
+  if (logChanged) {
+    saveRemindersLog(remindersLog);
+  }
+}
+
+/**
+ * Send notification via active Service Worker registration (or fallback to window.Notification)
+ */
+function sendNotification(title, options = {}) {
+  const defaultOptions = {
+    icon: './icon.svg',
+    badge: './icon.svg',
+    ...options
+  };
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.ready
+      .then(reg => {
+        return reg.showNotification(title, defaultOptions);
+      })
+      .catch(() => {
+        fallbackWindowNotification(title, defaultOptions);
+      });
+  } else {
+    fallbackWindowNotification(title, defaultOptions);
+  }
+}
+
+/**
+ * Fallback Notification for when ServiceWorker is unavailable (e.g. file:// or pre-controller).
+ */
+function fallbackWindowNotification(title, options) {
+  if ('Notification' in window && Notification.permission === 'granted') {
+    try {
+      const notif = new Notification(title, options);
+      if (options.data && options.data.taskId) {
+        notif.onclick = () => {
+          window.focus();
+          handleNavigateToTask(options.data.taskId);
+          notif.close();
+        };
+      }
+    } catch (err) {
+      console.warn('Fallback Notification error:', err);
+    }
+  }
+}
+
+/**
+ * Inspect the current URL hash (#task-<id>) and scroll to / highlight the task.
+ */
+function checkUrlHash() {
+  const hash = window.location.hash;
+  if (hash && hash.startsWith('#task-')) {
+    const taskId = hash.substring(6);
+    if (taskId) {
+      handleNavigateToTask(taskId);
+    }
+  }
+}
+
+/**
+ * Smoothly navigate to a specific task, resetting filters if necessary,
+ * scrolling into view, and playing a pulse highlight animation.
+ */
+function handleNavigateToTask(taskId) {
+  if (!taskId) return;
+
+  const task = state.tasks.find(t => t.id === taskId);
+  if (!task) {
+    showToast('Target task not found or was deleted.', 'info');
+    return;
+  }
+
+  let stateChanged = false;
+
+  // 1. Status Filter check
+  if (state.filter === 'completed' && !task.completed) {
+    state.filter = 'all';
+    stateChanged = true;
+  } else if (state.filter === 'pending' && task.completed) {
+    state.filter = 'all';
+    stateChanged = true;
+  }
+
+  // 2. Category Filter check
+  if (state.categoryFilter !== 'all') {
+    if (task.category === 'other' && task.customSubject) {
+      const norm = task.customSubject.trim().toLowerCase();
+      if (state.categoryFilter !== `custom:${norm}` && state.categoryFilter !== 'other') {
+        state.categoryFilter = 'all';
+        stateChanged = true;
+      }
+    } else if (state.categoryFilter !== task.category) {
+      state.categoryFilter = 'all';
+      stateChanged = true;
+    }
+  }
+
+  // 3. Quick Date View check
+  if (state.quickView) {
+    const dueStatus = getDueDateStatus(task.dueDate, task.dueTime, task.completed);
+    if (state.quickView === 'overdue' && (!dueStatus || dueStatus.status !== 'overdue')) {
+      state.quickView = null;
+      stateChanged = true;
+    } else if (state.quickView === 'today' && (!dueStatus || dueStatus.status !== 'today')) {
+      state.quickView = null;
+      stateChanged = true;
+    } else if (state.quickView === 'week') {
+      const diff = getTaskDiffDays(task);
+      if (diff === null || diff < 0 || diff > 7) {
+        state.quickView = null;
+        stateChanged = true;
+      }
+    } else if (state.quickView === 'urgent') {
+      const deadlineStamp = getTaskDeadlineTimestamp(task.dueDate, task.dueTime);
+      const settings = loadSettings();
+      const leadTimeMs = (settings.leadTimeHours || 5) * 60 * 60 * 1000;
+      if (!deadlineStamp || Date.now() < deadlineStamp - leadTimeMs) {
+        state.quickView = null;
+        stateChanged = true;
+      }
+    }
+  }
+
+  // 4. Search Query check
+  if (state.searchQuery) {
+    if (!task.title.toLowerCase().includes(state.searchQuery.toLowerCase())) {
+      state.searchQuery = '';
+      if (DOM.searchInput) DOM.searchInput.value = '';
+      if (DOM.searchClearBtn) DOM.searchClearBtn.hidden = true;
+      stateChanged = true;
+    }
+  }
+
+  // Re-render and sync filter UI if filters changed
+  if (stateChanged) {
+    DOM.filterPills.forEach(pill => {
+      const isActive = pill.dataset.filter === state.filter;
+      pill.classList.toggle('active', isActive);
+      pill.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    });
+    if (DOM.categoryFilterSelect) {
+      DOM.categoryFilterSelect.value = state.categoryFilter;
+    }
+    if (DOM.quickChips) {
+      DOM.quickChips.forEach(chip => {
+        const isActive = chip.dataset.quick === state.quickView;
+        chip.classList.toggle('active', isActive);
+        chip.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+      });
+    }
+    render();
+  }
+
+  // 5. Scroll task into view and animate highlight
+  requestAnimationFrame(() => {
+    const el = DOM.taskList.querySelector(`[data-task-id="${taskId}"]`);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.remove('task-highlight-pulse');
+      // Trigger browser reflow to reliably restart CSS keyframe animation
+      void el.offsetWidth;
+      el.classList.add('task-highlight-pulse');
+      setTimeout(() => {
+        el.classList.remove('task-highlight-pulse');
+      }, 2600);
+
+      showToast(`📌 Selected: ${escapeHTML(task.title)}`, 'info', null, 3000);
+    }
+  });
+}
+
+/**
  * Initialize the application on DOM ready.
  */
 function init() {
@@ -1817,15 +2974,18 @@ function init() {
   registerServiceWorker();
   setupPWAInstallation();
 
-  // 6. Initial Render
+  // 6. Setup Due Task Reminders & URL Hash Deep-Linking
+  setupNotifications();
+
+  // 7. Initial Render
   render();
 
-  // 7. Focus input on desktop for instant interaction
+  // 8. Focus input on desktop for instant interaction
   if (window.innerWidth > 768) {
     DOM.taskTitleInput.focus();
   }
 
-  // 8. Refresh greeting every 60 seconds to reflect time-of-day changes
+  // 9. Refresh greeting every 60 seconds to reflect time-of-day changes
   setInterval(updateGreetingDisplay, 60000);
 }
 

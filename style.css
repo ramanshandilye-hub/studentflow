@@ -481,6 +481,76 @@ body {
   }
 }
 
+/* Notification Reminder Toggle Button */
+.notification-toggle-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  position: relative;
+}
+
+.notification-toggle-btn:hover {
+  background: var(--bg-subtle-hover);
+  border-color: var(--border-hover);
+  transform: translateY(-1px);
+}
+
+.notification-toggle-btn:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.notification-toggle-btn.active {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-light);
+}
+
+[data-theme="dark"] .notification-toggle-btn.active {
+  background: rgba(79, 70, 229, 0.2);
+  border-color: var(--primary);
+  color: #a5b4fc;
+}
+
+.notification-toggle-btn.blocked {
+  color: var(--text-faint);
+  opacity: 0.6;
+}
+
+.notification-icon {
+  width: 20px;
+  height: 20px;
+  transition: transform var(--transition-fast);
+}
+
+.notification-badge {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 9px;
+  height: 9px;
+  background-color: var(--danger);
+  border: 2px solid var(--bg-card);
+  border-radius: var(--radius-full);
+  pointer-events: none;
+}
+
+.notification-toggle-btn.active .notification-badge {
+  background-color: var(--warning);
+}
+
+.notification-badge[hidden] {
+  display: none !important;
+}
+
 /* Theme Toggle Button */
 .theme-toggle-btn {
   display: flex;
@@ -1202,6 +1272,107 @@ body {
   padding: 6px 14px;
 }
 
+/* In-app Due Soon / Overdue Banner */
+.due-soon-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--warning-light);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-md);
+  margin-top: 10px;
+  margin-bottom: 6px;
+  animation: slideDown 200ms ease-out;
+  color: var(--text-main);
+}
+
+.due-soon-banner[hidden] {
+  display: none !important;
+}
+
+[data-theme="dark"] .due-soon-banner {
+  background: rgba(217, 119, 6, 0.15);
+  border-color: rgba(217, 119, 6, 0.35);
+}
+
+.due-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.due-banner-icon {
+  font-size: 1.4rem;
+  flex-shrink: 0;
+}
+
+.due-banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.due-banner-heading {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--warning-text);
+}
+
+[data-theme="dark"] .due-banner-heading {
+  color: #fbbf24;
+}
+
+.due-banner-desc {
+  font-size: 0.84rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.due-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.due-banner-btn {
+  min-height: 38px;
+  padding: 6px 14px;
+  font-size: 0.84rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+}
+
+.due-banner-dismiss {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  min-width: 44px;
+  min-height: 44px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.due-banner-dismiss:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text-main);
+}
+
+.due-banner-dismiss svg {
+  width: 18px;
+  height: 18px;
+}
+
 /* --------------------------------------------------------------------------
    7. Task List & Task Items
    -------------------------------------------------------------------------- */
@@ -1236,6 +1407,41 @@ body {
   background: var(--bg-subtle);
   border-color: var(--border-subtle);
   opacity: 0.82;
+}
+
+/* Highlight animation when navigating from notification or deep-link */
+.task-item.task-highlight-pulse {
+  animation: taskPulseHighlight 2.4s ease-in-out;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px var(--focus-ring), var(--shadow-md) !important;
+  z-index: 2;
+}
+
+@keyframes taskPulseHighlight {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 var(--focus-ring);
+  }
+  20% {
+    transform: scale(1.02);
+    box-shadow: 0 0 0 6px var(--focus-ring), var(--shadow-lg);
+  }
+  40% {
+    transform: scale(1);
+    box-shadow: 0 0 0 4px var(--focus-ring), var(--shadow-md);
+  }
+  60% {
+    transform: scale(1.01);
+    box-shadow: 0 0 0 5px var(--focus-ring), var(--shadow-md);
+  }
+  80% {
+    transform: scale(1);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 transparent;
+  }
 }
 
 /* Custom Accessible Checkbox */
@@ -1470,6 +1676,16 @@ body {
   color: var(--danger);
 }
 
+.action-btn.calendar-btn:hover {
+  background: var(--info-light);
+  color: var(--info);
+}
+
+[data-theme="dark"] .action-btn.calendar-btn:hover {
+  background: rgba(37, 99, 235, 0.2);
+  color: #93c5fd;
+}
+
 .action-btn svg {
   width: 17px;
   height: 17px;
@@ -1506,6 +1722,13 @@ body {
 .edit-options-row .select-wrapper {
   flex: 1;
   min-width: 120px;
+}
+
+.edit-options-row .time-input,
+.edit-options-row .date-input {
+  flex: 1;
+  min-width: 110px;
+  min-height: 40px;
 }
 
 .edit-custom-subject-input {
@@ -1675,6 +1898,303 @@ body {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 8px;
+}
+
+/* Reminder Settings Modal */
+.reminder-settings-card {
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modal-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.modal-title-group {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.modal-icon-header.reminder-icon {
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+[data-theme="dark"] .modal-icon-header.reminder-icon {
+  background: rgba(79, 70, 229, 0.2);
+  color: #a5b4fc;
+}
+
+.modal-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.modal-close-btn:hover {
+  background: var(--bg-subtle);
+  color: var(--text-main);
+}
+
+.modal-close-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+.modal-subtitle {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.reminder-settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.reminder-perm-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
+  font-size: 0.84rem;
+}
+
+.perm-status-label {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.perm-badge {
+  text-transform: capitalize;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 0.78rem;
+}
+
+.perm-badge.granted {
+  background: var(--success-light);
+  color: var(--success-text);
+  border: 1px solid var(--success-border);
+}
+
+.perm-badge.denied {
+  background: var(--danger-light);
+  color: var(--danger-text);
+  border: 1px solid var(--danger-border);
+}
+
+.perm-badge.default {
+  background: var(--bg-badge);
+  color: var(--text-muted);
+}
+
+.reminder-blocked-banner {
+  padding: 10px 14px;
+  background: var(--danger-light);
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-md);
+  color: var(--danger-text);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.reminder-blocked-banner[hidden] {
+  display: none !important;
+}
+
+.setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.setting-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.setting-label {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-main);
+  cursor: pointer;
+}
+
+.setting-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+/* Accessible Switch Toggle */
+.switch-toggle {
+  position: relative;
+  display: inline-block;
+  width: 50px;
+  height: 28px;
+  min-width: 50px;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.switch-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.switch-slider {
+  position: absolute;
+  cursor: pointer;
+  inset: 0;
+  background-color: var(--bg-subtle-hover);
+  border: 1.5px solid var(--border-color);
+  border-radius: var(--radius-full);
+  transition: all var(--transition-fast);
+}
+
+.switch-slider:before {
+  position: absolute;
+  content: "";
+  height: 20px;
+  width: 20px;
+  left: 2px;
+  bottom: 2px;
+  background-color: white;
+  border-radius: 50%;
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--transition-fast);
+}
+
+.switch-toggle input:checked + .switch-slider {
+  background-color: var(--primary);
+  border-color: var(--primary);
+}
+
+.switch-toggle input:checked + .switch-slider:before {
+  transform: translateX(22px);
+}
+
+.switch-toggle input:focus-visible + .switch-slider {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+.setting-sub-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
+  margin-top: -6px;
+}
+
+.setting-sub-row[hidden] {
+  display: none !important;
+}
+
+.time-range-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.time-range-sep {
+  font-size: 0.84rem;
+  color: var(--text-muted);
+}
+
+.time-input.compact {
+  min-height: 38px;
+  padding: 6px 10px;
+  font-size: 0.88rem;
+}
+
+.setting-action-row {
+  display: flex;
+  justify-content: flex-start;
+  padding-top: 4px;
+}
+
+.setting-btn {
+  min-height: 40px;
+  font-size: 0.88rem;
+}
+
+.reminder-note-callout {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--info-light);
+  border: 1px solid var(--info-border);
+  border-radius: var(--radius-md);
+  color: var(--info-text);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+[data-theme="dark"] .reminder-note-callout {
+  background: rgba(37, 99, 235, 0.15);
+  border-color: rgba(37, 99, 235, 0.35);
+  color: #93c5fd;
+}
+
+.reminder-note-callout .note-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+@media (max-width: 480px) {
+  .due-soon-banner {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .due-banner-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .setting-sub-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .time-range-group {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .time-range-sep {
+    display: none;
+  }
 }
 
 /* --------------------------------------------------------------------------
