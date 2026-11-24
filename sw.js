@@ -10,7 +10,7 @@ try {
  * Enables offline capability, background push, and PWA installability.
  */
 
-const CACHE_NAME = 'studentflow-v5';
+const CACHE_NAME = 'studentflow-v6';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',

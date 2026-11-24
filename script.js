@@ -3597,8 +3597,6 @@ function sendNotification(title, options = {}) {
     badge: './icon-192.png',
     ...options
   };
-    ...options
-  };
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.ready
