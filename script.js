@@ -17,6 +17,26 @@
 'use strict';
 
 /* ==========================================================================
+   ONESIGNAL & CLOUDFLARE WORKER CONFIGURATION
+   (Fill after setup. If left as placeholders, background push is hidden
+   and StudentFlow keeps using local in-app deadline reminders).
+   ========================================================================== */
+const ONESIGNAL_APP_ID = 'a81daae4-ec41-4b31-89c7-6b1e3364817e'; // OneSignal App ID (public, safe)
+const PUSH_API_URL = 'https://studentflow-push.raman-studentflow.workers.dev'; // Cloudflare Worker URL (no trailing slash)
+
+/**
+ * Check if OneSignal & Cloudflare Worker are configured (not empty or default placeholders)
+ */
+function isPushConfigured() {
+  if (!ONESIGNAL_APP_ID || !PUSH_API_URL) return false;
+  const appIdTrim = String(ONESIGNAL_APP_ID).trim();
+  const urlTrim = String(PUSH_API_URL).trim();
+  if (!appIdTrim || appIdTrim === 'YOUR_ONESIGNAL_APP_ID') return false;
+  if (!urlTrim || urlTrim.includes('your-subdomain') || urlTrim.includes('your-worker')) return false;
+  return true;
+}
+
+/* ==========================================================================
    1. CONSTANTS & APPLICATION STATE
    ========================================================================== */
 
@@ -27,7 +47,10 @@ const STORAGE_KEYS = {
   THEME: 'studentflow_theme_v1',
   USER_NAME: 'studentflow_name_v1',
   SETTINGS: 'studentflow_settings_v1',
-  REMINDERS: 'studentflow_reminders_v1'
+  REMINDERS: 'studentflow_reminders_v1',
+  PUSH_MAP: 'studentflow_push_v1',
+  PUSH_QUEUE: 'studentflow_push_queue_v1',
+  NUDGE_DISMISSED: 'studentflow_nudge_dismissed_v1'
 };
 
 // Titles of the original sample tasks to remove during v1 -> v2 migration
@@ -80,6 +103,8 @@ const DOM = {
   themeToggleBtn: document.getElementById('themeToggleBtn'),
   installAppBtn: document.getElementById('installAppBtn'),
   notificationToggleBtn: document.getElementById('notificationToggleBtn'),
+  notificationBtnText: document.getElementById('notificationBtnText'),
+  notificationStateDot: document.getElementById('notificationStateDot'),
   notificationBadge: document.getElementById('notificationBadge'),
   greetingContainer: document.querySelector('.greeting-container'),
   greetingDisplay: document.getElementById('greetingDisplay'),
@@ -114,6 +139,11 @@ const DOM = {
   taskDueTimeInput: document.getElementById('taskDueTimeInput'),
   titleErrorMsg: document.getElementById('titleErrorMsg'),
   titleErrorText: document.getElementById('titleErrorText'),
+
+  // First Task With Deadline Nudge Card
+  firstTaskNudgeCard: document.getElementById('firstTaskNudgeCard'),
+  nudgeNotifyBtn: document.getElementById('nudgeNotifyBtn'),
+  nudgeDismissBtn: document.getElementById('nudgeDismissBtn'),
 
   // In-app Due Soon / Overdue Banner
   dueSoonBanner: document.getElementById('dueSoonBanner'),
@@ -162,15 +192,26 @@ const DOM = {
   reminderModalBackdrop: document.getElementById('reminderModalBackdrop'),
   reminderModalCloseBtn: document.getElementById('reminderModalCloseBtn'),
   reminderModalDoneBtn: document.getElementById('reminderModalDoneBtn'),
+  pushStatusCard: document.getElementById('pushStatusCard'),
+  pushStatusIndicator: document.getElementById('pushStatusIndicator'),
+  pushStatusText: document.getElementById('pushStatusText'),
+  iosInstallHelp: document.getElementById('iosInstallHelp'),
   reminderPermBadge: document.getElementById('reminderPermBadge'),
   reminderBlockedHelp: document.getElementById('reminderBlockedHelp'),
   reminderMasterToggle: document.getElementById('reminderMasterToggle'),
+  ladderSection: document.getElementById('ladderSection'),
+  reminderLadder24hToggle: document.getElementById('reminderLadder24hToggle'),
+  reminderLadderLeadToggle: document.getElementById('reminderLadderLeadToggle'),
   reminderLeadTimeSelect: document.getElementById('reminderLeadTimeSelect'),
+  reminderLadder1hToggle: document.getElementById('reminderLadder1hToggle'),
+  reminderLadderOverdueToggle: document.getElementById('reminderLadderOverdueToggle'),
+  reminderHideTitlesToggle: document.getElementById('reminderHideTitlesToggle'),
   reminderQuietHoursToggle: document.getElementById('reminderQuietHoursToggle'),
   quietHoursTimesRow: document.getElementById('quietHoursTimesRow'),
   quietHoursStartInput: document.getElementById('quietHoursStartInput'),
   quietHoursEndInput: document.getElementById('quietHoursEndInput'),
   sendTestNotificationBtn: document.getElementById('sendTestNotificationBtn'),
+  sendTestBtnText: document.getElementById('sendTestBtnText'),
 
   // Toast Container
   toastRegion: document.getElementById('toastRegion')
@@ -348,8 +389,30 @@ const DEFAULT_SETTINGS = {
   leadTimeHours: 5,
   quietHoursEnabled: false,
   quietHoursStart: '22:00',
-  quietHoursEnd: '08:00'
+  quietHoursEnd: '08:00',
+  ladder24h: true,
+  ladderLead: true,
+  ladder1h: true,
+  ladderOverdue: true,
+  hideTitles: false
 };
+
+/**
+ * Check if background push notification credentials have been filled in.
+ */
+function isPushConfigured() {
+  return Boolean(
+    ONESIGNAL_APP_ID &&
+    typeof ONESIGNAL_APP_ID === 'string' &&
+    !ONESIGNAL_APP_ID.includes('YOUR_') &&
+    ONESIGNAL_APP_ID.trim().length > 10 &&
+    PUSH_API_URL &&
+    typeof PUSH_API_URL === 'string' &&
+    !PUSH_API_URL.includes('<subdomain>') &&
+    !PUSH_API_URL.includes('your-worker') &&
+    PUSH_API_URL.trim().length > 8
+  );
+}
 
 /**
  * Load reminder settings from LocalStorage ('studentflow_settings_v1') with fallback.
@@ -365,7 +428,12 @@ function loadSettings() {
       leadTimeHours: [1, 3, 5, 12, 24].includes(leadNum) ? leadNum : 5,
       quietHoursEnabled: Boolean(parsed.quietHoursEnabled),
       quietHoursStart: typeof parsed.quietHoursStart === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(parsed.quietHoursStart) ? parsed.quietHoursStart : '22:00',
-      quietHoursEnd: typeof parsed.quietHoursEnd === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(parsed.quietHoursEnd) ? parsed.quietHoursEnd : '08:00'
+      quietHoursEnd: typeof parsed.quietHoursEnd === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(parsed.quietHoursEnd) ? parsed.quietHoursEnd : '08:00',
+      ladder24h: parsed.ladder24h !== undefined ? Boolean(parsed.ladder24h) : true,
+      ladderLead: parsed.ladderLead !== undefined ? Boolean(parsed.ladderLead) : true,
+      ladder1h: parsed.ladder1h !== undefined ? Boolean(parsed.ladder1h) : true,
+      ladderOverdue: parsed.ladderOverdue !== undefined ? Boolean(parsed.ladderOverdue) : true,
+      hideTitles: Boolean(parsed.hideTitles)
     };
   } catch (err) {
     console.warn('Failed to load settings:', err);
@@ -381,6 +449,484 @@ function saveSettings(settings) {
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
   } catch (err) {
     console.warn('Failed to save settings:', err);
+  }
+}
+
+/**
+ * Load push notification map { [taskId]: { [stage]: { messageId, sendAt } } }
+ */
+function loadPushMap() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.PUSH_MAP);
+    return raw ? JSON.parse(raw) : {};
+  } catch (err) {
+    return {};
+  }
+}
+
+/**
+ * Save push notification map to LocalStorage ('studentflow_push_v1')
+ */
+function savePushMap(map) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.PUSH_MAP, JSON.stringify(map));
+  } catch (err) {
+    console.warn('Failed to save push map:', err);
+  }
+}
+
+/**
+ * Load offline push queue from LocalStorage ('studentflow_push_queue_v1')
+ */
+function loadPushQueue() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.PUSH_QUEUE);
+    return raw ? JSON.parse(raw) : [];
+  } catch (err) {
+    return [];
+  }
+}
+
+/**
+ * Save offline push queue to LocalStorage
+ */
+function savePushQueue(queue) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.PUSH_QUEUE, JSON.stringify(queue));
+  } catch (err) {
+    console.warn('Failed to save push queue:', err);
+  }
+}
+
+/**
+ * Enqueue an operation to the offline push queue and trigger process
+ */
+function enqueuePushOperation(action, payload) {
+  const queue = loadPushQueue();
+  queue.push({
+    action,
+    payload,
+    id: 'op_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+    timestamp: Date.now()
+  });
+  savePushQueue(queue);
+  if (navigator.onLine) {
+    processPushQueue();
+  }
+}
+
+let isProcessingQueue = false;
+
+/**
+ * Process offline push operations queue when online
+ */
+async function processPushQueue() {
+  if (isProcessingQueue || !navigator.onLine || !isPushConfigured()) return;
+  isProcessingQueue = true;
+
+  try {
+    const queue = loadPushQueue();
+    if (queue.length === 0) return;
+
+    const remainingQueue = [];
+
+    // Group cancel operations together (up to 12 IDs per batch)
+    const cancelIds = [];
+    const scheduleOps = [];
+
+    for (const item of queue) {
+      if (item.action === 'cancel' && item.payload && Array.isArray(item.payload.ids)) {
+        cancelIds.push(...item.payload.ids);
+      } else if (item.action === 'schedule' && item.payload) {
+        scheduleOps.push(item);
+      }
+    }
+
+    // Process cancels in batches of 12
+    if (cancelIds.length > 0) {
+      const uniqueIds = Array.from(new Set(cancelIds));
+      while (uniqueIds.length > 0) {
+        const batch = uniqueIds.splice(0, 12);
+        try {
+          const res = await fetch(`${PUSH_API_URL.replace(/\/$/, '')}/cancel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: batch })
+          });
+          if (!res.ok && res.status >= 500) {
+            remainingQueue.push({ action: 'cancel', payload: { ids: batch } });
+          }
+        } catch (err) {
+          remainingQueue.push({ action: 'cancel', payload: { ids: batch } });
+        }
+      }
+    }
+
+    // Process schedules
+    for (const op of scheduleOps) {
+      try {
+        const res = await fetch(`${PUSH_API_URL.replace(/\/$/, '')}/schedule`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(op.payload)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.messageId) {
+            const pushMap = loadPushMap();
+            if (!pushMap[op.payload.taskId]) pushMap[op.payload.taskId] = {};
+            pushMap[op.payload.taskId][op.payload.stage] = {
+              messageId: data.messageId,
+              sendAt: op.payload.sendAt
+            };
+            savePushMap(pushMap);
+          }
+        } else if (res.status >= 500) {
+          remainingQueue.push(op);
+        }
+      } catch (err) {
+        remainingQueue.push(op);
+      }
+    }
+
+    savePushQueue(remainingQueue);
+  } finally {
+    isProcessingQueue = false;
+  }
+}
+
+/**
+ * Detect iOS / iPadOS Safari user agent
+ */
+function isIosSafari() {
+  const ua = window.navigator.userAgent;
+  return /iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+/**
+ * Detect standalone PWA mode (installed to Home Screen)
+ */
+function isStandalonePwa() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+
+/**
+ * Get active OneSignal subscription ID if user is subscribed
+ */
+function getOneSignalSubscriptionId() {
+  if (window.OneSignal && window.OneSignal.User && window.OneSignal.User.PushSubscription) {
+    const sub = window.OneSignal.User.PushSubscription;
+    if (sub.optedIn && sub.id) {
+      try {
+        localStorage.setItem('studentflow_onesignal_sub_id_v1', sub.id);
+      } catch (e) {}
+      return sub.id;
+    } else if (sub.optedIn === false) {
+      try {
+        localStorage.removeItem('studentflow_onesignal_sub_id_v1');
+      } catch (e) {}
+      return '';
+    }
+  }
+  try {
+    return localStorage.getItem('studentflow_onesignal_sub_id_v1') || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * Check if background push is fully active (configured, permitted, and subscribed)
+ */
+function isBackgroundPushActive() {
+  if (!isPushConfigured()) return false;
+  if (!('Notification' in window) || Notification.permission !== 'granted') return false;
+  const settings = loadSettings();
+  if (!settings.enabled) return false;
+  return Boolean(getOneSignalSubscriptionId());
+}
+
+let oneSignalInitPromise = null;
+
+/**
+ * Lazily load OneSignal Web SDK v16 without blocking UI
+ */
+function loadOneSignalSDK() {
+  if (!isPushConfigured()) return Promise.resolve(null);
+  if (oneSignalInitPromise) return oneSignalInitPromise;
+
+  oneSignalInitPromise = new Promise((resolve) => {
+    if (window.OneSignal && typeof window.OneSignal.init === 'function') {
+      resolve(window.OneSignal);
+      return;
+    }
+
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+
+    const script = document.createElement('script');
+    script.src = 'https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js';
+    script.defer = true;
+    script.onerror = (err) => {
+      console.warn('OneSignal SDK failed to load (offline or blocked):', err);
+      resolve(null);
+    };
+
+    document.head.appendChild(script);
+
+    window.OneSignalDeferred.push(async function(OneSignal) {
+      try {
+        const basePath = window.location.pathname.substring(0, window.location.pathname.lastIndexOf('/') + 1) || '/';
+        const swPath = basePath.replace(/^\//, '') + 'sw.js';
+        const swScope = basePath;
+
+        await OneSignal.init({
+          appId: ONESIGNAL_APP_ID,
+          serviceWorkerPath: swPath,
+          serviceWorkerParam: { scope: swScope },
+          allowLocalhostAsSecureOrigin: true
+        });
+
+        if (OneSignal.User && OneSignal.User.PushSubscription) {
+          if (OneSignal.User.PushSubscription.optedIn && OneSignal.User.PushSubscription.id) {
+            try {
+              localStorage.setItem('studentflow_onesignal_sub_id_v1', OneSignal.User.PushSubscription.id);
+            } catch (e) {}
+          }
+
+          OneSignal.User.PushSubscription.addEventListener('change', () => {
+            const subId = OneSignal.User.PushSubscription.id;
+            const optedIn = OneSignal.User.PushSubscription.optedIn;
+            if (optedIn && subId) {
+              try {
+                localStorage.setItem('studentflow_onesignal_sub_id_v1', subId);
+              } catch (e) {}
+              reconcileScheduledPushes();
+            } else {
+              try {
+                localStorage.removeItem('studentflow_onesignal_sub_id_v1');
+              } catch (e) {}
+            }
+            syncReminderSettingsUI();
+            updateNotificationButtonState();
+          });
+        }
+
+        resolve(OneSignal);
+      } catch (err) {
+        console.warn('OneSignal init failed:', err);
+        resolve(null);
+      }
+    });
+  });
+
+  return oneSignalInitPromise;
+}
+
+/**
+ * Update visibility of the one-time nudge card after first task with a deadline
+ */
+function updateNudgeCardVisibility() {
+  if (!DOM.firstTaskNudgeCard) return;
+
+  let isDismissed = false;
+  try {
+    isDismissed = localStorage.getItem(STORAGE_KEYS.NUDGE_DISMISSED) === 'true';
+  } catch (e) {}
+
+  if (isDismissed) {
+    DOM.firstTaskNudgeCard.setAttribute('hidden', '');
+    return;
+  }
+
+  const settings = loadSettings();
+  const hasRemindersOn = Boolean(settings.enabled && 'Notification' in window && Notification.permission === 'granted');
+  if (hasRemindersOn) {
+    DOM.firstTaskNudgeCard.setAttribute('hidden', '');
+    return;
+  }
+
+  // Show only if user has at least one pending task with a deadline
+  const hasTaskWithDeadline = state.tasks.some(t => !t.completed && t.dueDate);
+  if (hasTaskWithDeadline) {
+    DOM.firstTaskNudgeCard.removeAttribute('hidden');
+  } else {
+    DOM.firstTaskNudgeCard.setAttribute('hidden', '');
+  }
+}
+
+/**
+ * Reconcile background push schedules with current tasks and settings.
+ * Schedules missing rungs for pending tasks with deadlines,
+ * cancels obsolete schedules for completed/deleted tasks or modified deadlines.
+ */
+function reconcileScheduledPushes() {
+  if (!isPushConfigured()) return;
+
+  const pushMap = loadPushMap();
+  const idsToCancel = [];
+  let mapModified = false;
+
+  const subscriptionId = getOneSignalSubscriptionId();
+  const pushActive = isBackgroundPushActive();
+
+  // If push is not active or no subscription ID, cancel all existing scheduled pushes
+  if (!pushActive || !subscriptionId) {
+    Object.keys(pushMap).forEach(taskId => {
+      const stageMap = pushMap[taskId];
+      if (stageMap && typeof stageMap === 'object') {
+        Object.values(stageMap).forEach(info => {
+          if (info && info.messageId) {
+            idsToCancel.push(info.messageId);
+          }
+        });
+      }
+      delete pushMap[taskId];
+      mapModified = true;
+    });
+
+    if (idsToCancel.length > 0) {
+      enqueuePushOperation('cancel', { ids: idsToCancel });
+    }
+    if (mapModified) {
+      savePushMap(pushMap);
+    }
+    return;
+  }
+
+  const settings = loadSettings();
+  const now = Date.now();
+  const currentTasksMap = new Map();
+  state.tasks.forEach(t => currentTasksMap.set(t.id, t));
+
+  // 1. Clean up tasks that are completed, deleted, or have no due date
+  Object.keys(pushMap).forEach(taskId => {
+    const task = currentTasksMap.get(taskId);
+    if (!task || task.completed || !task.dueDate) {
+      const stageMap = pushMap[taskId];
+      if (stageMap && typeof stageMap === 'object') {
+        Object.values(stageMap).forEach(info => {
+          if (info && info.messageId) {
+            idsToCancel.push(info.messageId);
+          }
+        });
+      }
+      delete pushMap[taskId];
+      mapModified = true;
+    }
+  });
+
+  // 2. Schedule desired rungs for active pending tasks with deadlines
+  state.tasks.forEach(task => {
+    if (task.completed || !task.dueDate) return;
+
+    const deadlineStamp = getTaskDeadlineTimestamp(task.dueDate, task.dueTime);
+    if (!deadlineStamp) return;
+
+    if (!pushMap[task.id]) {
+      pushMap[task.id] = {};
+    }
+    const currentTaskStages = pushMap[task.id];
+
+    // Build desired schedule ladder rungs
+    const desiredRungs = [];
+
+    // Rung 1: 24h before (only if deadline is > 24h away from scheduled trigger)
+    if (settings.ladder24h !== false) {
+      const send24h = deadlineStamp - (24 * 60 * 60 * 1000);
+      if (send24h > now + 10000) {
+        desiredRungs.push({ stage: '24h', timestamp: send24h });
+      }
+    }
+
+    // Rung 2: Advance lead time before
+    const leadHours = settings.leadTimeHours || 5;
+    if (settings.ladderLead !== false) {
+      const sendLead = deadlineStamp - (leadHours * 60 * 60 * 1000);
+      if (sendLead > now + 10000) {
+        const duplicate = desiredRungs.some(r => Math.abs(r.timestamp - sendLead) < 1000);
+        if (!duplicate) {
+          desiredRungs.push({ stage: 'lead', timestamp: sendLead });
+        }
+      }
+    }
+
+    // Rung 3: 1h before
+    if (settings.ladder1h !== false) {
+      const send1h = deadlineStamp - (1 * 60 * 60 * 1000);
+      if (send1h > now + 10000) {
+        const duplicate = desiredRungs.some(r => Math.abs(r.timestamp - send1h) < 1000);
+        if (!duplicate) {
+          desiredRungs.push({ stage: '1h', timestamp: send1h });
+        }
+      }
+    }
+
+    // Rung 4: Overdue (at deadline)
+    if (settings.ladderOverdue !== false) {
+      if (deadlineStamp > now + 10000) {
+        desiredRungs.push({ stage: 'overdue', timestamp: deadlineStamp });
+      }
+    }
+
+    const desiredStageNames = new Set(desiredRungs.map(r => r.stage));
+
+    // Cancel any stages previously scheduled that are no longer in desired rungs
+    Object.keys(currentTaskStages).forEach(stage => {
+      if (!desiredStageNames.has(stage)) {
+        const info = currentTaskStages[stage];
+        if (info && info.messageId) {
+          idsToCancel.push(info.messageId);
+        }
+        delete currentTaskStages[stage];
+        mapModified = true;
+      }
+    });
+
+    // For each desired rung, check if already scheduled with matching timestamp
+    desiredRungs.forEach(rung => {
+      const existing = currentTaskStages[rung.stage];
+      if (existing) {
+        const existingStamp = new Date(existing.sendAt).getTime();
+        // If sendAt changed (e.g. deadline or time was edited)
+        if (Math.abs(existingStamp - rung.timestamp) > 2000) {
+          if (existing.messageId) {
+            idsToCancel.push(existing.messageId);
+          }
+          delete currentTaskStages[rung.stage];
+          mapModified = true;
+
+          const payload = {
+            subscriptionId,
+            taskId: task.id,
+            stage: rung.stage,
+            sendAt: new Date(rung.timestamp).toISOString(),
+            title: task.title,
+            url: `${window.location.origin}${window.location.pathname}#task-${task.id}`,
+            hideTitle: Boolean(settings.hideTitles)
+          };
+          enqueuePushOperation('schedule', payload);
+        }
+      } else {
+        // Not scheduled yet
+        const payload = {
+          subscriptionId,
+          taskId: task.id,
+          stage: rung.stage,
+          sendAt: new Date(rung.timestamp).toISOString(),
+          title: task.title,
+          url: `${window.location.origin}${window.location.pathname}#task-${task.id}`,
+          hideTitle: Boolean(settings.hideTitles)
+        };
+        enqueuePushOperation('schedule', payload);
+      }
+    });
+  });
+
+  if (idsToCancel.length > 0) {
+    enqueuePushOperation('cancel', { ids: idsToCancel });
+  }
+  if (mapModified) {
+    savePushMap(pushMap);
   }
 }
 
@@ -1532,6 +2078,8 @@ function handleAddTask(e) {
   render();
 
   checkAndNotifyDueTasks();
+  reconcileScheduledPushes();
+  updateNudgeCardVisibility();
 }
 
 /**
@@ -1570,6 +2118,8 @@ function handleToggleTask(taskId) {
   render();
 
   checkAndNotifyDueTasks();
+  reconcileScheduledPushes();
+  updateNudgeCardVisibility();
 }
 
 /**
@@ -1601,6 +2151,8 @@ function handleDeleteTask(taskId) {
 
   render();
   checkAndNotifyDueTasks();
+  reconcileScheduledPushes();
+  updateNudgeCardVisibility();
 
   // Show Toast with active Undo button (~5 seconds)
   showToast(
@@ -1635,6 +2187,8 @@ function handleUndoDelete() {
   saveTasksToStorage();
   render();
   checkAndNotifyDueTasks();
+  reconcileScheduledPushes();
+  updateNudgeCardVisibility();
   showToast('Task restored! ↩️', 'success');
 }
 
@@ -1692,6 +2246,8 @@ function handleSaveEdit(taskId, newTitle, newCategory, newPriority, newDueDate, 
   saveTasksToStorage();
   render();
   checkAndNotifyDueTasks();
+  reconcileScheduledPushes();
+  updateNudgeCardVisibility();
   showToast('Task updated! ✏️', 'success');
 }
 
@@ -1717,6 +2273,8 @@ function handleClearCompleted() {
     state.tasks = state.tasks.filter(t => !t.completed);
     saveTasksToStorage();
     render();
+    reconcileScheduledPushes();
+    updateNudgeCardVisibility();
     showToast(`Removed ${count} completed task${count > 1 ? 's' : ''}.`, 'info');
   });
 }
@@ -1818,6 +2376,8 @@ function handleImportTasks(e) {
 
       saveTasksToStorage();
       render();
+      reconcileScheduledPushes();
+      updateNudgeCardVisibility();
 
       if (addedCount > 0) {
         showToast(`Successfully imported ${addedCount} new task${addedCount === 1 ? '' : 's'}! 📥`, 'success');
@@ -2278,6 +2838,21 @@ function closeReminderSettingsModal() {
  */
 function syncReminderSettingsUI() {
   const settings = loadSettings();
+  const pushConfigured = isPushConfigured();
+
+  // If push is NOT configured (placeholders), hide push-specific UI elements and keep local UI
+  if (DOM.pushStatusCard) DOM.pushStatusCard.hidden = !pushConfigured;
+  if (DOM.ladderSection) DOM.ladderSection.hidden = !pushConfigured;
+  const hideTitlesRow = document.getElementById('hideTitlesSettingRow');
+  if (hideTitlesRow) hideTitlesRow.hidden = !pushConfigured;
+  const privacyNote = document.querySelector('.reminder-privacy-note');
+  if (privacyNote) privacyNote.hidden = !pushConfigured;
+  const noteCallout = document.querySelector('.reminder-note-callout');
+  if (noteCallout) noteCallout.hidden = pushConfigured;
+
+  if (DOM.sendTestBtnText) {
+    DOM.sendTestBtnText.textContent = pushConfigured ? 'Send test push' : 'Send test notification';
+  }
 
   // Permission badge & blocked notice
   if (!('Notification' in window)) {
@@ -2315,9 +2890,50 @@ function syncReminderSettingsUI() {
       if (DOM.reminderBlockedHelp) DOM.reminderBlockedHelp.setAttribute('hidden', '');
       if (DOM.reminderMasterToggle) {
         DOM.reminderMasterToggle.disabled = false;
-        DOM.reminderMasterToggle.checked = Boolean(settings.enabled && perm === 'granted');
+        const isActive = pushConfigured ? isBackgroundPushActive() : (settings.enabled && perm === 'granted');
+        DOM.reminderMasterToggle.checked = Boolean(settings.enabled && isActive);
       }
     }
+  }
+
+  // Push Device Status text and dot
+  if (pushConfigured && DOM.pushStatusText && DOM.pushStatusIndicator) {
+    if ('Notification' in window && Notification.permission === 'denied') {
+      DOM.pushStatusText.textContent = 'Notifications BLOCKED by browser';
+      DOM.pushStatusIndicator.className = 'push-status-dot blocked';
+    } else if (isBackgroundPushActive()) {
+      DOM.pushStatusText.textContent = 'Reminders ON for this device';
+      DOM.pushStatusIndicator.className = 'push-status-dot active';
+    } else {
+      DOM.pushStatusText.textContent = 'Reminders OFF for this device';
+      DOM.pushStatusIndicator.className = 'push-status-dot';
+    }
+  }
+
+  // iOS Safari Home Screen instruction
+  if (DOM.iosInstallHelp) {
+    if (pushConfigured && isIosSafari() && !isStandalonePwa()) {
+      DOM.iosInstallHelp.removeAttribute('hidden');
+    } else {
+      DOM.iosInstallHelp.setAttribute('hidden', '');
+    }
+  }
+
+  // Ladder toggles
+  if (DOM.reminderLadder24hToggle) {
+    DOM.reminderLadder24hToggle.checked = settings.ladder24h !== false;
+  }
+  if (DOM.reminderLadderLeadToggle) {
+    DOM.reminderLadderLeadToggle.checked = settings.ladderLead !== false;
+  }
+  if (DOM.reminderLadder1hToggle) {
+    DOM.reminderLadder1hToggle.checked = settings.ladder1h !== false;
+  }
+  if (DOM.reminderLadderOverdueToggle) {
+    DOM.reminderLadderOverdueToggle.checked = settings.ladderOverdue !== false;
+  }
+  if (DOM.reminderHideTitlesToggle) {
+    DOM.reminderHideTitlesToggle.checked = Boolean(settings.hideTitles);
   }
 
   // Lead Time Select
@@ -2386,6 +3002,61 @@ function setupReminderSettingsModal() {
         return;
       }
 
+      // Check iOS PWA requirement
+      if (isPushConfigured() && isIosSafari() && !isStandalonePwa()) {
+        DOM.reminderMasterToggle.checked = false;
+        showToast('On iPhone, first add StudentFlow to your Home Screen (Share → Add to Home Screen), then turn on reminders.', 'info', null, 7000);
+        return;
+      }
+
+      const isChecked = DOM.reminderMasterToggle.checked;
+
+      if (isPushConfigured()) {
+        try {
+          const OneSignal = await loadOneSignalSDK();
+          if (OneSignal && OneSignal.User && OneSignal.User.PushSubscription) {
+            if (isChecked) {
+              await OneSignal.User.PushSubscription.optIn();
+              const subId = OneSignal.User.PushSubscription.id;
+              if (Notification.permission === 'granted' && subId) {
+                try {
+                  localStorage.setItem('studentflow_onesignal_sub_id_v1', subId);
+                } catch (e) {}
+                const settings = loadSettings();
+                settings.enabled = true;
+                saveSettings(settings);
+                reconcileScheduledPushes();
+                updateNudgeCardVisibility();
+                showToast('🔔 Real background push reminders enabled!', 'success');
+              } else {
+                DOM.reminderMasterToggle.checked = false;
+                showToast('Notification permission was not granted.', 'info');
+              }
+            } else {
+              await OneSignal.User.PushSubscription.optOut();
+              try {
+                localStorage.removeItem('studentflow_onesignal_sub_id_v1');
+              } catch (e) {}
+              const settings = loadSettings();
+              settings.enabled = false;
+              saveSettings(settings);
+              reconcileScheduledPushes();
+              showToast('🔕 Task reminders paused.', 'info');
+            }
+          } else {
+            const settings = loadSettings();
+            settings.enabled = isChecked;
+            saveSettings(settings);
+          }
+        } catch (err) {
+          console.warn('OneSignal opt-in/opt-out error:', err);
+        }
+        syncReminderSettingsUI();
+        updateNotificationButtonState();
+        return;
+      }
+
+      // Fallback local notification handling when push is not configured
       if (perm === 'default') {
         try {
           const result = await Notification.requestPermission();
@@ -2395,6 +3066,7 @@ function setupReminderSettingsModal() {
             saveSettings(settings);
             syncReminderSettingsUI();
             updateNotificationButtonState();
+            updateNudgeCardVisibility();
             showToast('🔔 Task reminders enabled!', 'success');
             checkAndNotifyDueTasks();
           } else {
@@ -2410,13 +3082,12 @@ function setupReminderSettingsModal() {
         return;
       }
 
-      // Permission is already 'granted'
-      const isChecked = DOM.reminderMasterToggle.checked;
       const settings = loadSettings();
       settings.enabled = isChecked;
       saveSettings(settings);
       syncReminderSettingsUI();
       updateNotificationButtonState();
+      updateNudgeCardVisibility();
 
       if (isChecked) {
         showToast('🔔 Task reminders enabled!', 'success');
@@ -2427,12 +3098,64 @@ function setupReminderSettingsModal() {
     });
   }
 
+  // Ladder Rung 1: 24h
+  if (DOM.reminderLadder24hToggle) {
+    DOM.reminderLadder24hToggle.addEventListener('change', () => {
+      const settings = loadSettings();
+      settings.ladder24h = DOM.reminderLadder24hToggle.checked;
+      saveSettings(settings);
+      reconcileScheduledPushes();
+    });
+  }
+
+  // Ladder Rung 2: Lead time toggle
+  if (DOM.reminderLadderLeadToggle) {
+    DOM.reminderLadderLeadToggle.addEventListener('change', () => {
+      const settings = loadSettings();
+      settings.ladderLead = DOM.reminderLadderLeadToggle.checked;
+      saveSettings(settings);
+      reconcileScheduledPushes();
+    });
+  }
+
+  // Ladder Rung 3: 1h
+  if (DOM.reminderLadder1hToggle) {
+    DOM.reminderLadder1hToggle.addEventListener('change', () => {
+      const settings = loadSettings();
+      settings.ladder1h = DOM.reminderLadder1hToggle.checked;
+      saveSettings(settings);
+      reconcileScheduledPushes();
+    });
+  }
+
+  // Ladder Rung 4: Overdue
+  if (DOM.reminderLadderOverdueToggle) {
+    DOM.reminderLadderOverdueToggle.addEventListener('change', () => {
+      const settings = loadSettings();
+      settings.ladderOverdue = DOM.reminderLadderOverdueToggle.checked;
+      saveSettings(settings);
+      reconcileScheduledPushes();
+    });
+  }
+
+  // Hide task titles toggle
+  if (DOM.reminderHideTitlesToggle) {
+    DOM.reminderHideTitlesToggle.addEventListener('change', () => {
+      const settings = loadSettings();
+      settings.hideTitles = DOM.reminderHideTitlesToggle.checked;
+      saveSettings(settings);
+      reconcileScheduledPushes();
+      showToast(settings.hideTitles ? 'Task titles hidden in notification alerts.' : 'Task titles shown in notification alerts.', 'info');
+    });
+  }
+
   // Lead-time select change
   if (DOM.reminderLeadTimeSelect) {
     DOM.reminderLeadTimeSelect.addEventListener('change', () => {
       const settings = loadSettings();
       settings.leadTimeHours = Number(DOM.reminderLeadTimeSelect.value) || 5;
       saveSettings(settings);
+      reconcileScheduledPushes();
       checkAndNotifyDueTasks();
       updateDueSoonBanner();
       showToast(`Advance reminders set to ${settings.leadTimeHours} hour${settings.leadTimeHours === 1 ? '' : 's'} before deadline.`, 'info');
@@ -2469,9 +3192,60 @@ function setupReminderSettingsModal() {
   if (DOM.quietHoursStartInput) DOM.quietHoursStartInput.addEventListener('change', handleQuietTimesChange);
   if (DOM.quietHoursEndInput) DOM.quietHoursEndInput.addEventListener('change', handleQuietTimesChange);
 
-  // Send Test Notification button
+  // Send Test Notification / Push button
   if (DOM.sendTestNotificationBtn) {
     DOM.sendTestNotificationBtn.addEventListener('click', async () => {
+      if (isPushConfigured()) {
+        if (!isBackgroundPushActive()) {
+          showToast('Please enable background reminders above first.', 'info');
+          return;
+        }
+
+        const subId = getOneSignalSubscriptionId();
+        if (!subId) {
+          showToast('OneSignal subscription not ready yet. Please try again in a moment.', 'info');
+          return;
+        }
+
+        DOM.sendTestNotificationBtn.disabled = true;
+        const originalText = DOM.sendTestBtnText ? DOM.sendTestBtnText.textContent : 'Send test push';
+        if (DOM.sendTestBtnText) DOM.sendTestBtnText.textContent = 'Scheduling...';
+
+        try {
+          const testSendAt = new Date(Date.now() + 10000).toISOString();
+          const res = await fetch(`${PUSH_API_URL.replace(/\/$/, '')}/schedule`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              subscriptionId: subId,
+              taskId: 'test_nudge',
+              stage: 'test',
+              sendAt: testSendAt,
+              title: 'StudentFlow',
+              url: window.location.href,
+              hideTitle: Boolean(loadSettings().hideTitles)
+            })
+          });
+
+          if (res.ok) {
+            showToast('🚀 Test push scheduled! Lock your screen or switch apps — alert arrives in ~10 seconds.', 'success', null, 8000);
+          } else {
+            const data = await res.json().catch(() => ({}));
+            showToast(data.error || 'Failed to schedule test push.', 'warning');
+          }
+        } catch (err) {
+          console.warn('Test push request failed:', err);
+          showToast('Could not schedule test push. Check connection.', 'danger');
+        } finally {
+          setTimeout(() => {
+            if (DOM.sendTestNotificationBtn) DOM.sendTestNotificationBtn.disabled = false;
+            if (DOM.sendTestBtnText) DOM.sendTestBtnText.textContent = originalText;
+          }, 4000);
+        }
+        return;
+      }
+
+      // Fallback local test notification
       if (!('Notification' in window)) {
         showToast('Desktop notifications are not supported in this browser.', 'info');
         return;
@@ -2498,13 +3272,33 @@ function setupReminderSettingsModal() {
 
       sendNotification('⏰ StudentFlow Test Alert', {
         body: testBody,
-        icon: './icon.svg',
-        badge: './icon.svg',
+        icon: './icon-192.png',
+        badge: './icon-192.png',
         tag: 'studentflow-test',
         renotify: true
       });
 
       showToast('Test notification dispatched! 🔔', 'info');
+    });
+  }
+
+  // Nudge card event listeners
+  if (DOM.nudgeNotifyBtn) {
+    DOM.nudgeNotifyBtn.addEventListener('click', () => {
+      try {
+        localStorage.setItem(STORAGE_KEYS.NUDGE_DISMISSED, 'true');
+      } catch (e) {}
+      if (DOM.firstTaskNudgeCard) DOM.firstTaskNudgeCard.setAttribute('hidden', '');
+      openReminderSettingsModal();
+    });
+  }
+  if (DOM.nudgeDismissBtn) {
+    DOM.nudgeDismissBtn.addEventListener('click', () => {
+      try {
+        localStorage.setItem(STORAGE_KEYS.NUDGE_DISMISSED, 'true');
+      } catch (e) {}
+      if (DOM.firstTaskNudgeCard) DOM.firstTaskNudgeCard.setAttribute('hidden', '');
+      showToast('Reminder suggestion dismissed.', 'info');
     });
   }
 
@@ -2566,6 +3360,7 @@ function updateNotificationButtonState() {
   if (!('Notification' in window)) {
     DOM.notificationToggleBtn.classList.remove('active');
     DOM.notificationToggleBtn.classList.add('blocked');
+    if (DOM.notificationStateDot) DOM.notificationStateDot.className = 'notification-state-dot state-blocked';
     DOM.notificationToggleBtn.title = 'Desktop notifications are not supported in this browser';
     DOM.notificationToggleBtn.setAttribute('aria-label', 'Desktop notifications not supported');
     if (DOM.notificationBadge) DOM.notificationBadge.hidden = true;
@@ -2574,20 +3369,25 @@ function updateNotificationButtonState() {
 
   const permission = Notification.permission;
   const settings = loadSettings();
-  const isEnabled = Boolean(settings.enabled && permission === 'granted');
+  const isEnabled = isPushConfigured()
+    ? isBackgroundPushActive()
+    : Boolean(settings.enabled && permission === 'granted');
 
   if (permission === 'denied') {
     DOM.notificationToggleBtn.classList.remove('active');
     DOM.notificationToggleBtn.classList.add('blocked');
+    if (DOM.notificationStateDot) DOM.notificationStateDot.className = 'notification-state-dot state-blocked';
     DOM.notificationToggleBtn.title = 'Notifications blocked in browser (click for settings)';
     DOM.notificationToggleBtn.setAttribute('aria-label', 'Notifications blocked in browser. Click for settings.');
   } else if (isEnabled) {
     DOM.notificationToggleBtn.classList.remove('blocked');
     DOM.notificationToggleBtn.classList.add('active');
+    if (DOM.notificationStateDot) DOM.notificationStateDot.className = 'notification-state-dot state-on';
     DOM.notificationToggleBtn.title = 'Task reminders active (click for settings)';
     DOM.notificationToggleBtn.setAttribute('aria-label', 'Task reminders active. Click for settings.');
   } else {
     DOM.notificationToggleBtn.classList.remove('active', 'blocked');
+    if (DOM.notificationStateDot) DOM.notificationStateDot.className = 'notification-state-dot state-off';
     DOM.notificationToggleBtn.title = 'Task reminder settings (click to open)';
     DOM.notificationToggleBtn.setAttribute('aria-label', 'Task reminder settings');
   }
@@ -2689,6 +3489,11 @@ function checkAndNotifyDueTasks() {
   updateNotificationBadge();
   updateDueSoonBanner();
 
+  // If background push is active, skip local notifications to prevent duplicate alerts
+  if (isBackgroundPushActive()) {
+    return;
+  }
+
   const settings = loadSettings();
 
   // If notifications not supported, denied, or disabled in settings, return
@@ -2737,8 +3542,8 @@ function checkAndNotifyDueTasks() {
 
         sendNotification(title, {
           body: progressBody,
-          icon: './icon.svg',
-          badge: './icon.svg',
+          icon: './icon-192.png',
+          badge: './icon-192.png',
           tag: `${task.id}_soon`,
           data: { taskId: task.id },
           renotify: true
@@ -2756,8 +3561,8 @@ function checkAndNotifyDueTasks() {
 
         sendNotification(title, {
           body: progressBody,
-          icon: './icon.svg',
-          badge: './icon.svg',
+          icon: './icon-192.png',
+          badge: './icon-192.png',
           tag: `${task.id}_overdue`,
           data: { taskId: task.id },
           renotify: true
@@ -2788,8 +3593,10 @@ function checkAndNotifyDueTasks() {
  */
 function sendNotification(title, options = {}) {
   const defaultOptions = {
-    icon: './icon.svg',
-    badge: './icon.svg',
+    icon: './icon-192.png',
+    badge: './icon-192.png',
+    ...options
+  };
     ...options
   };
 
@@ -2976,6 +3783,14 @@ function init() {
 
   // 6. Setup Due Task Reminders & URL Hash Deep-Linking
   setupNotifications();
+
+  // 6b. Background Push initialization & online queue handler
+  if (isPushConfigured()) {
+    loadOneSignalSDK();
+    window.addEventListener('online', processPushQueue);
+  }
+  reconcileScheduledPushes();
+  updateNudgeCardVisibility();
 
   // 7. Initial Render
   render();

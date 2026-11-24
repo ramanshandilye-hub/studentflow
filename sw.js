@@ -1,16 +1,25 @@
+// OneSignal Web Push SDK v16 Service Worker integration
+try {
+  importScripts('https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.sw.js');
+} catch (err) {
+  console.warn('OneSignal Service Worker import skipped or offline:', err);
+}
+
 /**
  * StudentFlow Service Worker
- * Enables offline capability and PWA installability.
+ * Enables offline capability, background push, and PWA installability.
  */
 
-const CACHE_NAME = 'studentflow-v4';
+const CACHE_NAME = 'studentflow-v5';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
   './style.css',
   './script.js',
   './manifest.json',
-  './icon.svg'
+  './icon.svg',
+  './icon-192.png',
+  './icon-512.png'
 ];
 
 // Install event: cache all shell assets

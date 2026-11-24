@@ -1,0 +1,4 @@
+# Cloudflare Worker local secrets and cache
+.dev.vars
+.wrangler
+node_modules

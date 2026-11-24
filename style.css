@@ -481,13 +481,15 @@ body {
   }
 }
 
-/* Notification Reminder Toggle Button */
+/* Notification Reminder Toggle Button ("Notify me") */
 .notification-toggle-btn {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
+  gap: 8px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 8px 14px;
   background: var(--bg-subtle);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
@@ -495,6 +497,8 @@ body {
   cursor: pointer;
   transition: all var(--transition-fast);
   position: relative;
+  font-size: 0.84rem;
+  font-weight: 600;
 }
 
 .notification-toggle-btn:hover {
@@ -521,14 +525,67 @@ body {
 }
 
 .notification-toggle-btn.blocked {
-  color: var(--text-faint);
-  opacity: 0.6;
+  color: var(--text-muted);
+  border-color: var(--danger-border);
+  background: var(--danger-light);
 }
 
 .notification-icon {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
   transition: transform var(--transition-fast);
+}
+
+.notification-btn-text {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.notification-state-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.notification-state-dot.state-off {
+  background-color: var(--text-faint);
+  box-shadow: none;
+}
+
+.notification-state-dot.state-on {
+  background-color: #10b981;
+  box-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+}
+
+.notification-state-dot.state-blocked {
+  background-color: var(--danger);
+  box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
+}
+
+@media (max-width: 580px) {
+  .notification-toggle-btn {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+}
+
+@media (max-width: 420px) {
+  .notification-btn-text {
+    display: none;
+  }
+  .notification-toggle-btn {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+  }
+  .notification-state-dot {
+    position: absolute;
+    bottom: 7px;
+    right: 7px;
+  }
 }
 
 .notification-badge {
@@ -2172,6 +2229,227 @@ body {
 .reminder-note-callout .note-icon {
   font-size: 1.1rem;
   flex-shrink: 0;
+}
+
+/* Push Status Card in Modal */
+.push-status-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  margin-bottom: 6px;
+}
+
+.push-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background-color: var(--text-faint);
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.push-status-dot.active {
+  background-color: #10b981;
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+}
+
+.push-status-dot.blocked {
+  background-color: var(--danger);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.6);
+}
+
+.push-status-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 0.84rem;
+}
+
+.push-status-label {
+  color: var(--text-muted);
+}
+
+.push-status-text {
+  color: var(--text-main);
+  font-weight: 700;
+}
+
+/* iOS Safari PWA Install Notice */
+.reminder-ios-banner {
+  padding: 10px 14px;
+  background: var(--warning-light);
+  border: 1px solid var(--warning-border);
+  border-radius: var(--radius-md);
+  color: var(--warning-text);
+  font-size: 0.84rem;
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.reminder-ios-banner[hidden] {
+  display: none !important;
+}
+
+/* Reminder Schedule Ladder Section */
+.ladder-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 0 6px 0;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.section-subheading {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--primary);
+  margin-bottom: 4px;
+}
+
+[data-theme="dark"] .section-subheading {
+  color: #a5b4fc;
+}
+
+.ladder-row {
+  padding: 8px 0;
+}
+
+.setting-row-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* OneSignal Privacy Note */
+.reminder-privacy-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-subtle);
+  border-radius: var(--radius-md);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.privacy-icon {
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+/* First Task With Deadline Nudge Card */
+.nudge-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  margin-bottom: 14px;
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.08) 0%, rgba(147, 51, 234, 0.08) 100%);
+  border: 1.5px solid var(--primary-light);
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius-md);
+  animation: slideDown var(--transition-normal);
+}
+
+[data-theme="dark"] .nudge-card {
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.15) 0%, rgba(147, 51, 234, 0.12) 100%);
+  border-color: rgba(99, 102, 241, 0.35);
+  border-left-color: var(--primary);
+}
+
+.nudge-card[hidden] {
+  display: none !important;
+}
+
+.nudge-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.nudge-icon {
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+
+.nudge-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nudge-title {
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+.nudge-desc {
+  font-size: 0.84rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.nudge-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.nudge-btn {
+  min-height: 40px;
+  padding: 8px 16px;
+  font-size: 0.86rem;
+  white-space: nowrap;
+}
+
+.nudge-dismiss {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.nudge-dismiss:hover {
+  background: var(--bg-subtle-hover);
+  color: var(--text-main);
+}
+
+.nudge-dismiss svg {
+  width: 18px;
+  height: 18px;
+}
+
+@media (max-width: 580px) {
+  .nudge-card {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .nudge-actions {
+    width: 100%;
+    justify-content: space-between;
+    margin-top: 4px;
+  }
 }
 
 @media (max-width: 480px) {
