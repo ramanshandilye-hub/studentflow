@@ -50,7 +50,8 @@ const STORAGE_KEYS = {
   REMINDERS: 'studentflow_reminders_v1',
   PUSH_MAP: 'studentflow_push_v1',
   PUSH_QUEUE: 'studentflow_push_queue_v1',
-  NUDGE_DISMISSED: 'studentflow_nudge_dismissed_v1'
+  NUDGE_DISMISSED: 'studentflow_nudge_dismissed_v1',
+  WELCOME_SENT: 'studentflow_welcome_sent_v1'
 };
 
 // Titles of the original sample tasks to remove during v1 -> v2 migration
@@ -240,6 +241,12 @@ const DOM = {
   quietHoursStartInput: document.getElementById('quietHoursStartInput'),
   quietHoursEndInput: document.getElementById('quietHoursEndInput'),
 
+  // iOS Safari Install Modal
+  iosInstallModal: document.getElementById('iosInstallModal'),
+  iosInstallBackdrop: document.getElementById('iosInstallBackdrop'),
+  iosInstallCloseBtn: document.getElementById('iosInstallCloseBtn'),
+  iosInstallDoneBtn: document.getElementById('iosInstallDoneBtn'),
+
   // Toast Container
   toastRegion: document.getElementById('toastRegion')
 };
@@ -427,16 +434,37 @@ const DEFAULT_SETTINGS = {
 };
 
 /**
- * Deduce active preset based on ladder configuration
+ * Deduce active preset based on canonical distinct notification send times.
+ * Treats rungs with the same send time (e.g. ladderLead at 1h and ladder1h) as one.
+ * Presets:
+ * - Light: 1h before + at deadline -> offsets: { 0, 1 }
+ * - Normal: 5h before + 1h before + at deadline -> offsets: { 0, 1, 5 }
+ * - Extra careful: 24h before + 5h before + 1h before + at deadline -> offsets: { 0, 1, 5, 24 }
+ * - Custom: any other combination (e.g. { 0, 1, 24 } or custom lead times like 3h or 12h)
  */
 function deducePreset(ladder24h, ladderLead, leadTimeHours, ladder1h, ladderOverdue) {
-  if (!ladder24h && !ladderLead && ladder1h && ladderOverdue) {
+  const activeOffsets = new Set();
+
+  if (Boolean(ladderOverdue)) activeOffsets.add(0);
+  if (Boolean(ladder1h)) activeOffsets.add(1);
+  if (Boolean(ladderLead)) {
+    const hours = Number(leadTimeHours);
+    activeOffsets.add([1, 3, 5, 12, 24].includes(hours) ? hours : 5);
+  }
+  if (Boolean(ladder24h)) activeOffsets.add(24);
+
+  const hasExact = (...offsets) => {
+    if (activeOffsets.size !== offsets.length) return false;
+    return offsets.every(o => activeOffsets.has(o));
+  };
+
+  if (hasExact(0, 1)) {
     return 'light';
   }
-  if (!ladder24h && ladderLead && leadTimeHours === 5 && ladder1h && ladderOverdue) {
+  if (hasExact(0, 1, 5)) {
     return 'normal';
   }
-  if (ladder24h && ladderLead && leadTimeHours === 5 && ladder1h && ladderOverdue) {
+  if (hasExact(0, 1, 5, 24)) {
     return 'careful';
   }
   return 'custom';
@@ -475,10 +503,8 @@ function loadSettings() {
     const ladderOverdue = parsed.ladderOverdue !== undefined ? Boolean(parsed.ladderOverdue) : true;
     const leadTimeHours = [1, 3, 5, 12, 24].includes(leadNum) ? leadNum : 5;
 
-    let preset = parsed.preset;
-    if (!['light', 'normal', 'careful', 'custom'].includes(preset)) {
-      preset = deducePreset(ladder24h, ladderLead, leadTimeHours, ladder1h, ladderOverdue);
-    }
+    // Preset reflects the actual ladder rungs (Custom when matching no preset)
+    const preset = deducePreset(ladder24h, ladderLead, leadTimeHours, ladder1h, ladderOverdue);
 
     const lang = (parsed.lang === 'hi' || parsed.lang === 'en') ? parsed.lang : 'en';
 
@@ -2889,30 +2915,93 @@ function registerServiceWorker() {
  */
 let deferredInstallPrompt = null;
 
+/**
+ * Open iOS Safari Install instructions popup
+ */
+function openIosInstallModal() {
+  if (!DOM.iosInstallModal) return;
+  DOM.iosInstallModal.removeAttribute('hidden');
+  if (DOM.iosInstallDoneBtn) {
+    DOM.iosInstallDoneBtn.focus();
+  }
+}
+
+/**
+ * Close iOS Safari Install instructions popup
+ */
+function closeIosInstallModal() {
+  if (!DOM.iosInstallModal) return;
+  DOM.iosInstallModal.setAttribute('hidden', '');
+  if (DOM.installAppBtn && !DOM.installAppBtn.hidden) {
+    DOM.installAppBtn.focus();
+  }
+}
+
 function setupPWAInstallation() {
-  // Listen for native install prompt event from browser
+  // If already installed in standalone display mode, hide the install button immediately
+  if (isStandalonePwa()) {
+    if (DOM.installAppBtn) DOM.installAppBtn.hidden = true;
+  } else if (isIosSafari()) {
+    // iOS Safari does not support beforeinstallprompt; show button to open instructions popup
+    if (DOM.installAppBtn) DOM.installAppBtn.hidden = false;
+  }
+
+  // Listen for native install prompt event from browser (Android Chrome, desktop Chrome/Edge)
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredInstallPrompt = e;
-    if (DOM.installAppBtn) {
+    if (DOM.installAppBtn && !isStandalonePwa()) {
       DOM.installAppBtn.hidden = false;
     }
   });
 
+  // Listen for standalone display-mode changes (e.g. user launches or switches to installed mode)
+  if (window.matchMedia) {
+    try {
+      const standaloneMql = window.matchMedia('(display-mode: standalone)');
+      standaloneMql.addEventListener('change', (e) => {
+        if (e.matches) {
+          if (DOM.installAppBtn) DOM.installAppBtn.hidden = true;
+          closeIosInstallModal();
+        }
+      });
+    } catch (err) {}
+  }
+
   if (DOM.installAppBtn) {
     DOM.installAppBtn.addEventListener('click', async () => {
-      if (!deferredInstallPrompt) {
+      if (deferredInstallPrompt) {
+        deferredInstallPrompt.prompt();
+        const { outcome } = await deferredInstallPrompt.userChoice;
+        if (outcome === 'accepted') {
+          showToast('Installing StudentFlow... 🚀', 'success');
+        }
+        deferredInstallPrompt = null;
+        DOM.installAppBtn.hidden = true;
+      } else if (isIosSafari()) {
+        openIosInstallModal();
+      } else {
         showToast('To install, use browser menu > "Install App" or "Add to Home Screen".', 'info', null, 5000);
-        return;
       }
+    });
+  }
 
-      deferredInstallPrompt.prompt();
-      const { outcome } = await deferredInstallPrompt.userChoice;
-      if (outcome === 'accepted') {
-        showToast('Installing StudentFlow... 🚀', 'success');
+  // Bind iOS Safari install modal actions
+  if (DOM.iosInstallCloseBtn) {
+    DOM.iosInstallCloseBtn.addEventListener('click', closeIosInstallModal);
+  }
+  if (DOM.iosInstallDoneBtn) {
+    DOM.iosInstallDoneBtn.addEventListener('click', closeIosInstallModal);
+  }
+  if (DOM.iosInstallBackdrop) {
+    DOM.iosInstallBackdrop.addEventListener('click', closeIosInstallModal);
+  }
+  if (DOM.iosInstallModal) {
+    DOM.iosInstallModal.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeIosInstallModal();
       }
-      deferredInstallPrompt = null;
-      DOM.installAppBtn.hidden = true;
     });
   }
 
@@ -2921,6 +3010,7 @@ function setupPWAInstallation() {
     if (DOM.installAppBtn) {
       DOM.installAppBtn.hidden = true;
     }
+    closeIosInstallModal();
     showToast('StudentFlow installed as Web App! 🎉', 'success', null, 4000);
   });
 }
@@ -3201,8 +3291,8 @@ function syncReminderSettingsUI() {
     DOM.reminderFallbackHint.hidden = !isPushUnavailable;
   }
 
-  // Presets sync
-  const currentPreset = settings.preset || deducePreset(settings.ladder24h, settings.ladderLead, settings.leadTimeHours, settings.ladder1h, settings.ladderOverdue);
+  // Presets sync (always deduce dynamically to reflect actual active rungs)
+  const currentPreset = deducePreset(settings.ladder24h, settings.ladderLead, settings.leadTimeHours, settings.ladder1h, settings.ladderOverdue);
   if (DOM.activePresetBadge) {
     if (currentPreset === 'light') DOM.activePresetBadge.textContent = 'Light';
     else if (currentPreset === 'careful') DOM.activePresetBadge.textContent = 'Extra careful';
@@ -3217,6 +3307,10 @@ function syncReminderSettingsUI() {
   if (DOM.presetCardLight) DOM.presetCardLight.classList.toggle('active', currentPreset === 'light');
   if (DOM.presetCardNormal) DOM.presetCardNormal.classList.toggle('active', currentPreset === 'normal');
   if (DOM.presetCardCareful) DOM.presetCardCareful.classList.toggle('active', currentPreset === 'careful');
+
+  if (DOM.sendTestBtnText && DOM.sendTestBtnText.textContent !== 'Scheduling...') {
+    DOM.sendTestBtnText.textContent = 'Test notification';
+  }
 
   // Ladder toggles
   if (DOM.reminderLadder24hToggle) {
@@ -3370,6 +3464,7 @@ function setupReminderSettingsModal() {
                 saveSettings(settings);
                 reconcileScheduledPushes();
                 updateNudgeCardVisibility();
+                sendWelcomeNotificationIfFirstTime(settings);
                 showToast('🔔 Real background push reminders enabled!', 'success');
               } else {
                 DOM.reminderMasterToggle.checked = false;
@@ -3390,6 +3485,9 @@ function setupReminderSettingsModal() {
             const settings = loadSettings();
             settings.enabled = isChecked;
             saveSettings(settings);
+            if (isChecked) {
+              sendWelcomeNotificationIfFirstTime(settings);
+            }
           }
         } catch (err) {
           console.warn('OneSignal opt-in/opt-out error:', err);
@@ -3410,6 +3508,7 @@ function setupReminderSettingsModal() {
             syncReminderSettingsUI();
             updateNotificationButtonState();
             updateNudgeCardVisibility();
+            sendWelcomeNotificationIfFirstTime(settings);
             showToast('🔔 Task reminders enabled!', 'success');
             checkAndNotifyDueTasks();
           } else {
@@ -3433,6 +3532,7 @@ function setupReminderSettingsModal() {
       updateNudgeCardVisibility();
 
       if (isChecked) {
+        sendWelcomeNotificationIfFirstTime(settings);
         showToast('🔔 Task reminders enabled!', 'success');
         checkAndNotifyDueTasks();
       } else {
@@ -3965,6 +4065,35 @@ function fallbackWindowNotification(title, options) {
       console.warn('Fallback Notification error:', err);
     }
   }
+}
+
+/**
+ * Send a one-time welcome notification when reminders are enabled for the first time on a device.
+ * Fires only once per device (remembered in localStorage 'studentflow_welcome_sent_v1') and not on reload.
+ */
+function sendWelcomeNotificationIfFirstTime(settings) {
+  try {
+    if (localStorage.getItem(STORAGE_KEYS.WELCOME_SENT) === 'true') {
+      return;
+    }
+    localStorage.setItem(STORAGE_KEYS.WELCOME_SENT, 'true');
+  } catch (err) {
+    return;
+  }
+
+  const isHi = settings && settings.lang === 'hi';
+  const heading = isHi ? '🎉 Reminders chalu ho gaye!' : '🎉 Reminders are on!';
+  const content = isHi
+    ? 'Deadlines se pehle hum yaad dilayenge.'
+    : "We'll nudge you before deadlines.";
+
+  sendNotification(heading, {
+    body: content,
+    icon: './icon-192.png',
+    badge: './icon-192.png',
+    tag: 'studentflow-welcome',
+    renotify: true
+  });
 }
 
 /**
