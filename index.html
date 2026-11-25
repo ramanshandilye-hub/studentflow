@@ -240,12 +240,29 @@
               <label for="taskCategorySelect" class="input-label">Subject / Category</label>
               <div class="select-wrapper">
                 <select id="taskCategorySelect" class="select-input">
-                  <option value="math">📐 Mathematics</option>
-                  <option value="science">🔬 Science</option>
-                  <option value="english">📚 English / Lit</option>
-                  <option value="history">🏛️ History</option>
-                  <option value="coding">💻 Coding / CS</option>
-                  <option value="other" selected>📝 Other (type your own)</option>
+                  <optgroup label="School">
+                    <option value="math">📐 Mathematics</option>
+                    <option value="physics">⚛️ Physics</option>
+                    <option value="chemistry">🧪 Chemistry</option>
+                    <option value="biology">🧬 Biology</option>
+                    <option value="english">📚 English</option>
+                    <option value="hindi">📖 Hindi</option>
+                    <option value="sst">🌍 Social Science (SST)</option>
+                    <option value="coding">💻 Computer Science</option>
+                    <option value="history">🏛️ History</option>
+                    <option value="science">🔬 General Science</option>
+                  </optgroup>
+                  <optgroup label="Exam prep">
+                    <option value="reasoning">🧠 Reasoning</option>
+                    <option value="quant">🔢 Quantitative Aptitude</option>
+                    <option value="gk">📰 GK / Current Affairs</option>
+                    <option value="mock">📝 Mock Test</option>
+                    <option value="dpp">🎯 DPP / Practice</option>
+                    <option value="revision">🔄 Revision</option>
+                  </optgroup>
+                  <optgroup label="Other">
+                    <option value="other" selected>📝 Other (type your own)</option>
+                  </optgroup>
                 </select>
               </div>
               <!-- Custom Subject Input (Shown directly below when 'Other' is selected) -->
@@ -388,12 +405,29 @@
               <div class="select-wrapper compact">
                 <select id="categoryFilterSelect" class="select-input compact-select" aria-label="Filter by subject category">
                   <option value="all">All Subjects</option>
-                  <option value="math">📐 Mathematics</option>
-                  <option value="science">🔬 Science</option>
-                  <option value="english">📚 English / Lit</option>
-                  <option value="history">🏛️ History</option>
-                  <option value="coding">💻 Coding / CS</option>
-                  <option value="other">📝 Other</option>
+                  <optgroup label="School">
+                    <option value="math">📐 Mathematics</option>
+                    <option value="physics">⚛️ Physics</option>
+                    <option value="chemistry">🧪 Chemistry</option>
+                    <option value="biology">🧬 Biology</option>
+                    <option value="english">📚 English</option>
+                    <option value="hindi">📖 Hindi</option>
+                    <option value="sst">🌍 Social Science (SST)</option>
+                    <option value="coding">💻 Computer Science</option>
+                    <option value="history">🏛️ History</option>
+                    <option value="science">🔬 General Science</option>
+                  </optgroup>
+                  <optgroup label="Exam prep">
+                    <option value="reasoning">🧠 Reasoning</option>
+                    <option value="quant">🔢 Quantitative Aptitude</option>
+                    <option value="gk">📰 GK / Current Affairs</option>
+                    <option value="mock">📝 Mock Test</option>
+                    <option value="dpp">🎯 DPP / Practice</option>
+                    <option value="revision">🔄 Revision</option>
+                  </optgroup>
+                  <optgroup label="Other">
+                    <option value="other">📝 General / Other</option>
+                  </optgroup>
                 </select>
               </div>
             </div>
@@ -553,24 +587,24 @@
         </div>
 
         <div class="modal-body reminder-settings-body">
-          <!-- Device Push Status Banner -->
-          <div class="push-status-card" id="pushStatusCard">
-            <span class="push-status-dot" id="pushStatusIndicator"></span>
-            <div class="push-status-info">
-              <span class="push-status-label">Device Status:</span>
-              <strong id="pushStatusText" class="push-status-text">Reminders OFF for this device</strong>
+          <!-- Main Simple Status Card + Big Toggle -->
+          <div class="reminder-status-panel" id="pushStatusCard">
+            <div class="status-panel-info">
+              <div class="status-title-row">
+                <span class="push-status-dot" id="pushStatusIndicator"></span>
+                <strong id="pushStatusText" class="push-status-text">Reminders are OFF for this device</strong>
+              </div>
+              <span class="status-panel-desc">Get nudged on time before your assignment deadlines</span>
             </div>
+            <label class="switch-toggle switch-toggle-lg" aria-label="Turn on reminders">
+              <input type="checkbox" id="reminderMasterToggle">
+              <span class="switch-slider"></span>
+            </label>
           </div>
 
-          <!-- iPhone / iPad Home Screen notice -->
+          <!-- iPhone / iPad Home Screen notice (shown on iOS when not installed as PWA) -->
           <div id="iosInstallHelp" class="reminder-ios-banner" hidden>
             <p>📱 <strong>On iPhone / iPad:</strong> First add StudentFlow to your Home Screen (tap <strong>Share</strong> → <strong>Add to Home Screen</strong>), open it from your Home Screen, then turn on reminders.</p>
-          </div>
-
-          <!-- Permission Status Pill / Banner -->
-          <div class="reminder-perm-status" id="reminderPermStatusRow">
-            <span class="perm-status-label">Permission status:</span>
-            <span id="reminderPermBadge" class="badge perm-badge">Default</span>
           </div>
 
           <!-- Unblock help instructions if permission denied -->
@@ -578,141 +612,209 @@
             <p><strong>Notifications are blocked:</strong> Click the site settings / lock icon in your browser address bar, set Notifications to <em>Allow</em>, and reload StudentFlow.</p>
           </div>
 
-          <!-- Master Toggle -->
-          <div class="setting-row">
-            <div class="setting-info">
-              <label for="reminderMasterToggle" class="setting-label">Enable Background Reminders</label>
-              <span class="setting-desc">Real background push alerts delivered even when StudentFlow is closed</span>
-            </div>
-            <label class="switch-toggle" aria-label="Toggle task reminders">
-              <input type="checkbox" id="reminderMasterToggle">
-              <span class="switch-slider"></span>
-            </label>
+          <!-- Short Fallback Hint: shown ONLY when background push is unavailable -->
+          <div id="reminderFallbackHint" class="reminder-fallback-hint" hidden>
+            <p>ℹ️ Reminders only work while the app is open. You can also use 📅 Add to calendar.</p>
           </div>
 
-          <!-- Reminder Ladder Section -->
-          <div class="ladder-section" id="ladderSection">
-            <span class="section-subheading">Reminder Schedule Ladder</span>
-            
-            <!-- Ladder Rung 1: 24h Before -->
-            <div class="setting-row ladder-row">
-              <div class="setting-info">
-                <label for="reminderLadder24hToggle" class="setting-label">24 hours before deadline</label>
-                <span class="setting-desc">Advance heads-up one day ahead</span>
-              </div>
-              <label class="switch-toggle" aria-label="Toggle 24 hours before reminder">
-                <input type="checkbox" id="reminderLadder24hToggle" checked>
-                <span class="switch-slider"></span>
-              </label>
+          <!-- Permission Status Pill -->
+          <div class="reminder-perm-status" id="reminderPermStatusRow">
+            <span class="perm-status-label">Permission status:</span>
+            <span id="reminderPermBadge" class="badge perm-badge">Default</span>
+          </div>
+
+          <!-- Three Friendly Reminder Preset Cards -->
+          <div class="reminder-presets-section" id="reminderPresetsSection">
+            <div class="presets-header-row">
+              <span class="section-subheading">Reminder Presets</span>
+              <span class="preset-badge" id="activePresetBadge">Normal</span>
             </div>
 
-            <!-- Ladder Rung 2: User's Lead Time Before -->
-            <div class="setting-row ladder-row" id="leadTimeSettingRow">
-              <div class="setting-info">
-                <label for="reminderLadderLeadToggle" class="setting-label">Advance lead time</label>
-                <span class="setting-desc">Custom nudge before deadline</span>
-              </div>
-              <div class="setting-row-controls">
-                <div class="select-wrapper compact">
-                  <select id="reminderLeadTimeSelect" class="select-input compact-select" aria-label="Advance reminder lead time">
-                    <option value="1">1 hour before</option>
-                    <option value="3">3 hours before</option>
-                    <option value="5" selected>5 hours before (Default)</option>
-                    <option value="12">12 hours before</option>
-                    <option value="24">1 day before (24 hours)</option>
-                  </select>
+            <div class="preset-cards-group" role="radiogroup" aria-label="Notification schedule presets">
+              <!-- Preset 1: Light -->
+              <label class="preset-card" id="presetCardLight">
+                <input type="radio" name="reminderPreset" value="light" id="presetRadioLight" class="preset-radio">
+                <div class="preset-card-body">
+                  <div class="preset-title-row">
+                    <span class="preset-icon">⚡</span>
+                    <span class="preset-title">Light</span>
+                  </div>
+                  <span class="preset-timing">1 hour before + at deadline</span>
                 </div>
-                <label class="switch-toggle" aria-label="Toggle lead time reminder">
-                  <input type="checkbox" id="reminderLadderLeadToggle" checked>
-                  <span class="switch-slider"></span>
-                </label>
-              </div>
-            </div>
-
-            <!-- Ladder Rung 3: 1h Before -->
-            <div class="setting-row ladder-row">
-              <div class="setting-info">
-                <label for="reminderLadder1hToggle" class="setting-label">1 hour before deadline</label>
-                <span class="setting-desc">Final hour warning for last-minute review</span>
-              </div>
-              <label class="switch-toggle" aria-label="Toggle 1 hour before reminder">
-                <input type="checkbox" id="reminderLadder1hToggle" checked>
-                <span class="switch-slider"></span>
               </label>
-            </div>
 
-            <!-- Ladder Rung 4: At Deadline / Overdue -->
-            <div class="setting-row ladder-row">
-              <div class="setting-info">
-                <label for="reminderLadderOverdueToggle" class="setting-label">At deadline (Overdue alert)</label>
-                <span class="setting-desc">Notify right as the task becomes overdue</span>
-              </div>
-              <label class="switch-toggle" aria-label="Toggle overdue reminder">
-                <input type="checkbox" id="reminderLadderOverdueToggle" checked>
-                <span class="switch-slider"></span>
+              <!-- Preset 2: Normal (Default) -->
+              <label class="preset-card active" id="presetCardNormal">
+                <input type="radio" name="reminderPreset" value="normal" id="presetRadioNormal" class="preset-radio" checked>
+                <div class="preset-card-body">
+                  <div class="preset-title-row">
+                    <span class="preset-icon">🎯</span>
+                    <span class="preset-title">Normal <small class="preset-tag">Default</small></span>
+                  </div>
+                  <span class="preset-timing">5 hours + 1 hour before + at deadline</span>
+                </div>
+              </label>
+
+              <!-- Preset 3: Extra careful -->
+              <label class="preset-card" id="presetCardCareful">
+                <input type="radio" name="reminderPreset" value="careful" id="presetRadioCareful" class="preset-radio">
+                <div class="preset-card-body">
+                  <div class="preset-title-row">
+                    <span class="preset-icon">🛡️</span>
+                    <span class="preset-title">Extra careful</span>
+                  </div>
+                  <span class="preset-timing">1 day + 5 hours + 1 hour before + at deadline</span>
+                </div>
               </label>
             </div>
           </div>
 
-          <!-- Hide Task Titles in Notifications Toggle -->
-          <div class="setting-row" id="hideTitlesSettingRow">
-            <div class="setting-info">
-              <label for="reminderHideTitlesToggle" class="setting-label">Hide task titles in notifications</label>
-              <span class="setting-desc">Use generic privacy text ("You have a task due soon")</span>
-            </div>
-            <label class="switch-toggle" aria-label="Toggle hiding task titles in notifications">
-              <input type="checkbox" id="reminderHideTitlesToggle">
-              <span class="switch-slider"></span>
-            </label>
-          </div>
-
-          <!-- Quiet Hours Toggle -->
-          <div class="setting-row" id="quietHoursSettingRow">
-            <div class="setting-info">
-              <label for="reminderQuietHoursToggle" class="setting-label">Quiet Hours</label>
-              <span class="setting-desc">Mute alerts during sleep or study hours (works across midnight)</span>
-            </div>
-            <label class="switch-toggle" aria-label="Toggle quiet hours">
-              <input type="checkbox" id="reminderQuietHoursToggle">
-              <span class="switch-slider"></span>
-            </label>
-          </div>
-
-          <!-- Quiet Hours Time Range Inputs (shown when quiet hours enabled) -->
-          <div class="setting-sub-row" id="quietHoursTimesRow" hidden>
-            <div class="time-range-group">
-              <label for="quietHoursStartInput" class="input-label sub-label">From</label>
-              <input type="time" id="quietHoursStartInput" class="text-input time-input compact" value="22:00" aria-label="Quiet hours start time">
-            </div>
-            <span class="time-range-sep">to</span>
-            <div class="time-range-group">
-              <label for="quietHoursEndInput" class="input-label sub-label">Until</label>
-              <input type="time" id="quietHoursEndInput" class="text-input time-input compact" value="08:00" aria-label="Quiet hours end time">
-            </div>
-          </div>
-
-          <!-- Send Test Notification -->
-          <div class="setting-action-row">
-            <button type="button" id="sendTestNotificationBtn" class="btn btn-secondary setting-btn">
+          <!-- Small Send Test Notification Button in Main View -->
+          <div class="setting-action-row main-test-row">
+            <button type="button" id="sendTestNotificationBtn" class="btn btn-secondary setting-btn-sm">
               <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                 <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
                 <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
               </svg>
-              <span id="sendTestBtnText">Send test push</span>
+              <span id="sendTestBtnText">Send test notification</span>
             </button>
           </div>
 
-          <!-- Privacy Note -->
-          <div class="reminder-privacy-note">
-            <span class="privacy-icon" aria-hidden="true">🔒</span>
-            <p class="privacy-text">Reminder text is sent to our notification service (OneSignal) to deliver it.</p>
-          </div>
+          <!-- Collapsible "More options" (closed by default) -->
+          <details class="more-options-details" id="reminderMoreOptions">
+            <summary class="more-options-summary">
+              <div class="summary-left">
+                <svg class="summary-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="9 18 15 12 9 6"></polyline>
+                </svg>
+                <span class="summary-heading">More options</span>
+              </div>
+              <span class="summary-subtext">Custom ladder, language & quiet hours</span>
+            </summary>
 
-          <!-- Informational Note (Required) -->
-          <div class="reminder-note-callout">
-            <span class="note-icon" aria-hidden="true">ℹ️</span>
-            <p class="note-text">Alerts appear while StudentFlow is open. For alerts when the app is closed, use 📅 Add to calendar on a task.</p>
-          </div>
+            <div class="more-options-content">
+              <!-- Individual Ladder Toggles -->
+              <div class="ladder-section" id="ladderSection">
+                <span class="section-subheading">Custom Reminder Ladder</span>
+
+                <!-- Ladder Rung 1: 24h Before -->
+                <div class="setting-row">
+                  <div class="setting-info">
+                    <label for="reminderLadder24hToggle" class="setting-label">24 hours before deadline</label>
+                    <span class="setting-desc">Advance heads-up one day ahead</span>
+                  </div>
+                  <label class="switch-toggle" aria-label="Toggle 24 hours before reminder">
+                    <input type="checkbox" id="reminderLadder24hToggle">
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Ladder Rung 2: User's Lead Time Before -->
+                <div class="setting-row" id="leadTimeSettingRow">
+                  <div class="setting-info">
+                    <label for="reminderLadderLeadToggle" class="setting-label">Advance lead time</label>
+                    <span class="setting-desc">Custom nudge before deadline</span>
+                  </div>
+                  <div class="setting-row-controls">
+                    <div class="select-wrapper compact">
+                      <select id="reminderLeadTimeSelect" class="select-input compact-select" aria-label="Advance reminder lead time">
+                        <option value="1">1 hour before</option>
+                        <option value="3">3 hours before</option>
+                        <option value="5" selected>5 hours before (Default)</option>
+                        <option value="12">12 hours before</option>
+                        <option value="24">1 day before (24 hours)</option>
+                      </select>
+                    </div>
+                    <label class="switch-toggle" aria-label="Toggle lead time reminder">
+                      <input type="checkbox" id="reminderLadderLeadToggle" checked>
+                      <span class="switch-slider"></span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Ladder Rung 3: 1h Before -->
+                <div class="setting-row">
+                  <div class="setting-info">
+                    <label for="reminderLadder1hToggle" class="setting-label">1 hour before deadline</label>
+                    <span class="setting-desc">Final hour warning for last-minute review</span>
+                  </div>
+                  <label class="switch-toggle" aria-label="Toggle 1 hour before reminder">
+                    <input type="checkbox" id="reminderLadder1hToggle" checked>
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Ladder Rung 4: At Deadline / Overdue -->
+                <div class="setting-row">
+                  <div class="setting-info">
+                    <label for="reminderLadderOverdueToggle" class="setting-label">At deadline (Overdue alert)</label>
+                    <span class="setting-desc">Notify right as the task becomes overdue</span>
+                  </div>
+                  <label class="switch-toggle" aria-label="Toggle overdue reminder">
+                    <input type="checkbox" id="reminderLadderOverdueToggle" checked>
+                    <span class="switch-slider"></span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Hide Task Titles in Notifications Toggle -->
+              <div class="setting-row" id="hideTitlesSettingRow">
+                <div class="setting-info">
+                  <label for="reminderHideTitlesToggle" class="setting-label">Hide task titles in notifications</label>
+                  <span class="setting-desc">Use generic privacy text ("You have a task due soon")</span>
+                </div>
+                <label class="switch-toggle" aria-label="Toggle hiding task titles in notifications">
+                  <input type="checkbox" id="reminderHideTitlesToggle">
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+
+              <!-- Notification Language Select (English / Hinglish) -->
+              <div class="setting-row" id="languageSettingRow">
+                <div class="setting-info">
+                  <label for="reminderLangSelect" class="setting-label">Notification language</label>
+                  <span class="setting-desc">Choose language for reminder alerts</span>
+                </div>
+                <div class="select-wrapper compact">
+                  <select id="reminderLangSelect" class="select-input compact-select" aria-label="Notification language">
+                    <option value="en" selected>English</option>
+                    <option value="hi">Hinglish</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Quiet Hours Toggle -->
+              <div class="setting-row" id="quietHoursSettingRow">
+                <div class="setting-info">
+                  <label for="reminderQuietHoursToggle" class="setting-label">Quiet Hours</label>
+                  <span class="setting-desc">Mute alerts during sleep or study hours (works across midnight)</span>
+                </div>
+                <label class="switch-toggle" aria-label="Toggle quiet hours">
+                  <input type="checkbox" id="reminderQuietHoursToggle">
+                  <span class="switch-slider"></span>
+                </label>
+              </div>
+
+              <!-- Quiet Hours Time Range Inputs -->
+              <div class="setting-sub-row" id="quietHoursTimesRow" hidden>
+                <div class="time-range-group">
+                  <label for="quietHoursStartInput" class="input-label sub-label">From</label>
+                  <input type="time" id="quietHoursStartInput" class="text-input time-input compact" value="22:00" aria-label="Quiet hours start time">
+                </div>
+                <span class="time-range-sep">to</span>
+                <div class="time-range-group">
+                  <label for="quietHoursEndInput" class="input-label sub-label">Until</label>
+                  <input type="time" id="quietHoursEndInput" class="text-input time-input compact" value="08:00" aria-label="Quiet hours end time">
+                </div>
+              </div>
+
+              <!-- Privacy Note -->
+              <div class="reminder-privacy-note">
+                <span class="privacy-icon" aria-hidden="true">🔒</span>
+                <p class="privacy-text">Reminder text is delivered through OneSignal.</p>
+              </div>
+            </div>
+          </details>
         </div>
 
         <div class="modal-actions">

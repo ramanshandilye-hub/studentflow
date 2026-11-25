@@ -64,12 +64,28 @@ const OLD_SAMPLE_TITLES = [
 
 // Category metadata (Labels & Icons)
 const CATEGORIES = {
-  math: { label: 'Mathematics', icon: '📐', className: 'badge-cat-math' },
-  science: { label: 'Science', icon: '🔬', className: 'badge-cat-science' },
-  english: { label: 'English / Lit', icon: '📚', className: 'badge-cat-english' },
-  history: { label: 'History', icon: '🏛️', className: 'badge-cat-history' },
-  coding: { label: 'Coding / CS', icon: '💻', className: 'badge-cat-coding' },
-  other: { label: 'Other', icon: '📝', className: 'badge-cat-other' }
+  // School
+  math: { label: 'Mathematics', icon: '📐', className: 'badge-cat-math', group: 'School' },
+  physics: { label: 'Physics', icon: '⚛️', className: 'badge-cat-physics', group: 'School' },
+  chemistry: { label: 'Chemistry', icon: '🧪', className: 'badge-cat-chemistry', group: 'School' },
+  biology: { label: 'Biology', icon: '🧬', className: 'badge-cat-biology', group: 'School' },
+  english: { label: 'English', icon: '📚', className: 'badge-cat-english', group: 'School' },
+  hindi: { label: 'Hindi', icon: '📖', className: 'badge-cat-hindi', group: 'School' },
+  sst: { label: 'Social Science (SST)', icon: '🌍', className: 'badge-cat-sst', group: 'School' },
+  coding: { label: 'Computer Science', icon: '💻', className: 'badge-cat-coding', group: 'School' },
+  history: { label: 'History', icon: '🏛️', className: 'badge-cat-history', group: 'School' },
+  science: { label: 'General Science', icon: '🔬', className: 'badge-cat-science', group: 'School' },
+
+  // Exam prep
+  reasoning: { label: 'Reasoning', icon: '🧠', className: 'badge-cat-reasoning', group: 'Exam prep' },
+  quant: { label: 'Quantitative Aptitude', icon: '🔢', className: 'badge-cat-quant', group: 'Exam prep' },
+  gk: { label: 'GK / Current Affairs', icon: '📰', className: 'badge-cat-gk', group: 'Exam prep' },
+  mock: { label: 'Mock Test', icon: '📝', className: 'badge-cat-mock', group: 'Exam prep' },
+  dpp: { label: 'DPP / Practice', icon: '🎯', className: 'badge-cat-dpp', group: 'Exam prep' },
+  revision: { label: 'Revision', icon: '🔄', className: 'badge-cat-revision', group: 'Exam prep' },
+
+  // Other
+  other: { label: 'General / Other', icon: '📝', className: 'badge-cat-other', group: 'Other' }
 };
 
 // Priority metadata
@@ -198,7 +214,19 @@ const DOM = {
   iosInstallHelp: document.getElementById('iosInstallHelp'),
   reminderPermBadge: document.getElementById('reminderPermBadge'),
   reminderBlockedHelp: document.getElementById('reminderBlockedHelp'),
+  reminderFallbackHint: document.getElementById('reminderFallbackHint'),
   reminderMasterToggle: document.getElementById('reminderMasterToggle'),
+  reminderPresetsSection: document.getElementById('reminderPresetsSection'),
+  activePresetBadge: document.getElementById('activePresetBadge'),
+  presetRadioLight: document.getElementById('presetRadioLight'),
+  presetRadioNormal: document.getElementById('presetRadioNormal'),
+  presetRadioCareful: document.getElementById('presetRadioCareful'),
+  presetCardLight: document.getElementById('presetCardLight'),
+  presetCardNormal: document.getElementById('presetCardNormal'),
+  presetCardCareful: document.getElementById('presetCardCareful'),
+  sendTestNotificationBtn: document.getElementById('sendTestNotificationBtn'),
+  sendTestBtnText: document.getElementById('sendTestBtnText'),
+  reminderMoreOptions: document.getElementById('reminderMoreOptions'),
   ladderSection: document.getElementById('ladderSection'),
   reminderLadder24hToggle: document.getElementById('reminderLadder24hToggle'),
   reminderLadderLeadToggle: document.getElementById('reminderLadderLeadToggle'),
@@ -206,12 +234,11 @@ const DOM = {
   reminderLadder1hToggle: document.getElementById('reminderLadder1hToggle'),
   reminderLadderOverdueToggle: document.getElementById('reminderLadderOverdueToggle'),
   reminderHideTitlesToggle: document.getElementById('reminderHideTitlesToggle'),
+  reminderLangSelect: document.getElementById('reminderLangSelect'),
   reminderQuietHoursToggle: document.getElementById('reminderQuietHoursToggle'),
   quietHoursTimesRow: document.getElementById('quietHoursTimesRow'),
   quietHoursStartInput: document.getElementById('quietHoursStartInput'),
   quietHoursEndInput: document.getElementById('quietHoursEndInput'),
-  sendTestNotificationBtn: document.getElementById('sendTestNotificationBtn'),
-  sendTestBtnText: document.getElementById('sendTestBtnText'),
 
   // Toast Container
   toastRegion: document.getElementById('toastRegion')
@@ -386,16 +413,34 @@ function saveThemeToStorage(theme) {
 
 const DEFAULT_SETTINGS = {
   enabled: false,
+  preset: 'normal',
   leadTimeHours: 5,
   quietHoursEnabled: false,
   quietHoursStart: '22:00',
   quietHoursEnd: '08:00',
-  ladder24h: true,
+  ladder24h: false,
   ladderLead: true,
   ladder1h: true,
   ladderOverdue: true,
-  hideTitles: false
+  hideTitles: false,
+  lang: 'en'
 };
+
+/**
+ * Deduce active preset based on ladder configuration
+ */
+function deducePreset(ladder24h, ladderLead, leadTimeHours, ladder1h, ladderOverdue) {
+  if (!ladder24h && !ladderLead && ladder1h && ladderOverdue) {
+    return 'light';
+  }
+  if (!ladder24h && ladderLead && leadTimeHours === 5 && ladder1h && ladderOverdue) {
+    return 'normal';
+  }
+  if (ladder24h && ladderLead && leadTimeHours === 5 && ladder1h && ladderOverdue) {
+    return 'careful';
+  }
+  return 'custom';
+}
 
 /**
  * Check if background push notification credentials have been filled in.
@@ -423,17 +468,33 @@ function loadSettings() {
     if (!raw) return { ...DEFAULT_SETTINGS };
     const parsed = JSON.parse(raw);
     const leadNum = Number(parsed.leadTimeHours);
+
+    const ladder24h = parsed.ladder24h !== undefined ? Boolean(parsed.ladder24h) : false;
+    const ladderLead = parsed.ladderLead !== undefined ? Boolean(parsed.ladderLead) : true;
+    const ladder1h = parsed.ladder1h !== undefined ? Boolean(parsed.ladder1h) : true;
+    const ladderOverdue = parsed.ladderOverdue !== undefined ? Boolean(parsed.ladderOverdue) : true;
+    const leadTimeHours = [1, 3, 5, 12, 24].includes(leadNum) ? leadNum : 5;
+
+    let preset = parsed.preset;
+    if (!['light', 'normal', 'careful', 'custom'].includes(preset)) {
+      preset = deducePreset(ladder24h, ladderLead, leadTimeHours, ladder1h, ladderOverdue);
+    }
+
+    const lang = (parsed.lang === 'hi' || parsed.lang === 'en') ? parsed.lang : 'en';
+
     return {
       enabled: Boolean(parsed.enabled),
-      leadTimeHours: [1, 3, 5, 12, 24].includes(leadNum) ? leadNum : 5,
+      preset: preset,
+      leadTimeHours: leadTimeHours,
       quietHoursEnabled: Boolean(parsed.quietHoursEnabled),
       quietHoursStart: typeof parsed.quietHoursStart === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(parsed.quietHoursStart) ? parsed.quietHoursStart : '22:00',
       quietHoursEnd: typeof parsed.quietHoursEnd === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(parsed.quietHoursEnd) ? parsed.quietHoursEnd : '08:00',
-      ladder24h: parsed.ladder24h !== undefined ? Boolean(parsed.ladder24h) : true,
-      ladderLead: parsed.ladderLead !== undefined ? Boolean(parsed.ladderLead) : true,
-      ladder1h: parsed.ladder1h !== undefined ? Boolean(parsed.ladder1h) : true,
-      ladderOverdue: parsed.ladderOverdue !== undefined ? Boolean(parsed.ladderOverdue) : true,
-      hideTitles: Boolean(parsed.hideTitles)
+      ladder24h: ladder24h,
+      ladderLead: ladderLead,
+      ladder1h: ladder1h,
+      ladderOverdue: ladderOverdue,
+      hideTitles: Boolean(parsed.hideTitles),
+      lang: lang
     };
   } catch (err) {
     console.warn('Failed to load settings:', err);
@@ -577,7 +638,10 @@ async function processPushQueue() {
             if (!pushMap[op.payload.taskId]) pushMap[op.payload.taskId] = {};
             pushMap[op.payload.taskId][op.payload.stage] = {
               messageId: data.messageId,
-              sendAt: op.payload.sendAt
+              sendAt: op.payload.sendAt,
+              lang: op.payload.lang || 'en',
+              hideTitle: Boolean(op.payload.hideTitle),
+              leadHours: op.payload.leadHours || 5
             };
             savePushMap(pushMap);
           }
@@ -828,45 +892,49 @@ function reconcileScheduledPushes() {
     const currentTaskStages = pushMap[task.id];
 
     // Build desired schedule ladder rungs
-    const desiredRungs = [];
+    const rawRungs = [];
 
     // Rung 1: 24h before (only if deadline is > 24h away from scheduled trigger)
-    if (settings.ladder24h !== false) {
+    if (settings.ladder24h) {
       const send24h = deadlineStamp - (24 * 60 * 60 * 1000);
       if (send24h > now + 10000) {
-        desiredRungs.push({ stage: '24h', timestamp: send24h });
+        rawRungs.push({ stage: '24h', timestamp: send24h });
       }
     }
 
     // Rung 2: Advance lead time before
     const leadHours = settings.leadTimeHours || 5;
-    if (settings.ladderLead !== false) {
+    if (settings.ladderLead) {
       const sendLead = deadlineStamp - (leadHours * 60 * 60 * 1000);
       if (sendLead > now + 10000) {
-        const duplicate = desiredRungs.some(r => Math.abs(r.timestamp - sendLead) < 1000);
-        if (!duplicate) {
-          desiredRungs.push({ stage: 'lead', timestamp: sendLead });
-        }
+        rawRungs.push({ stage: 'lead', timestamp: sendLead, leadHours: leadHours });
       }
     }
 
     // Rung 3: 1h before
-    if (settings.ladder1h !== false) {
+    if (settings.ladder1h) {
       const send1h = deadlineStamp - (1 * 60 * 60 * 1000);
       if (send1h > now + 10000) {
-        const duplicate = desiredRungs.some(r => Math.abs(r.timestamp - send1h) < 1000);
-        if (!duplicate) {
-          desiredRungs.push({ stage: '1h', timestamp: send1h });
-        }
+        rawRungs.push({ stage: '1h', timestamp: send1h });
       }
     }
 
     // Rung 4: Overdue (at deadline)
-    if (settings.ladderOverdue !== false) {
+    if (settings.ladderOverdue) {
       if (deadlineStamp > now + 10000) {
-        desiredRungs.push({ stage: 'overdue', timestamp: deadlineStamp });
+        rawRungs.push({ stage: 'overdue', timestamp: deadlineStamp });
       }
     }
+
+    // De-duplicate: if custom lead time equals 24h or 1h (or equals another enabled rung),
+    // do NOT schedule that rung twice. Each distinct send time per task gets one notification.
+    const desiredRungs = [];
+    rawRungs.forEach(candidate => {
+      const isDuplicate = desiredRungs.some(r => Math.abs(r.timestamp - candidate.timestamp) < 60000);
+      if (!isDuplicate) {
+        desiredRungs.push(candidate);
+      }
+    });
 
     const desiredStageNames = new Set(desiredRungs.map(r => r.stage));
 
@@ -882,13 +950,21 @@ function reconcileScheduledPushes() {
       }
     });
 
-    // For each desired rung, check if already scheduled with matching timestamp
+    // For each desired rung, check if already scheduled with matching timestamp and settings
+    const targetLang = settings.lang || 'en';
+    const targetHideTitle = Boolean(settings.hideTitles);
+    const targetLeadHours = settings.leadTimeHours || 5;
+
     desiredRungs.forEach(rung => {
       const existing = currentTaskStages[rung.stage];
       if (existing) {
         const existingStamp = new Date(existing.sendAt).getTime();
-        // If sendAt changed (e.g. deadline or time was edited)
-        if (Math.abs(existingStamp - rung.timestamp) > 2000) {
+        const timeChanged = Math.abs(existingStamp - rung.timestamp) > 2000;
+        const langChanged = existing.lang && existing.lang !== targetLang;
+        const hideTitleChanged = existing.hideTitle !== undefined && existing.hideTitle !== targetHideTitle;
+        const leadChanged = rung.stage === 'lead' && existing.leadHours && existing.leadHours !== targetLeadHours;
+
+        if (timeChanged || langChanged || hideTitleChanged || leadChanged) {
           if (existing.messageId) {
             idsToCancel.push(existing.messageId);
           }
@@ -902,7 +978,9 @@ function reconcileScheduledPushes() {
             sendAt: new Date(rung.timestamp).toISOString(),
             title: task.title,
             url: `${window.location.origin}${window.location.pathname}#task-${task.id}`,
-            hideTitle: Boolean(settings.hideTitles)
+            hideTitle: targetHideTitle,
+            lang: targetLang,
+            leadHours: targetLeadHours
           };
           enqueuePushOperation('schedule', payload);
         }
@@ -915,7 +993,9 @@ function reconcileScheduledPushes() {
           sendAt: new Date(rung.timestamp).toISOString(),
           title: task.title,
           url: `${window.location.origin}${window.location.pathname}#task-${task.id}`,
-          hideTitle: Boolean(settings.hideTitles)
+          hideTitle: targetHideTitle,
+          lang: targetLang,
+          leadHours: targetLeadHours
         };
         enqueuePushOperation('schedule', payload);
       }
@@ -1435,12 +1515,29 @@ function rebuildCategoryFilterOptions() {
 
   let html = `
     <option value="all">All Subjects</option>
-    <option value="math">📐 Mathematics</option>
-    <option value="science">🔬 Science</option>
-    <option value="english">📚 English / Lit</option>
-    <option value="history">🏛️ History</option>
-    <option value="coding">💻 Coding / CS</option>
-    <option value="other">📝 General / Other</option>
+    <optgroup label="School">
+      <option value="math">📐 Mathematics</option>
+      <option value="physics">⚛️ Physics</option>
+      <option value="chemistry">🧪 Chemistry</option>
+      <option value="biology">🧬 Biology</option>
+      <option value="english">📚 English</option>
+      <option value="hindi">📖 Hindi</option>
+      <option value="sst">🌍 Social Science (SST)</option>
+      <option value="coding">💻 Computer Science</option>
+      <option value="history">🏛️ History</option>
+      <option value="science">🔬 General Science</option>
+    </optgroup>
+    <optgroup label="Exam prep">
+      <option value="reasoning">🧠 Reasoning</option>
+      <option value="quant">🔢 Quantitative Aptitude</option>
+      <option value="gk">📰 GK / Current Affairs</option>
+      <option value="mock">📝 Mock Test</option>
+      <option value="dpp">🎯 DPP / Practice</option>
+      <option value="revision">🔄 Revision</option>
+    </optgroup>
+    <optgroup label="Other">
+      <option value="other">📝 General / Other</option>
+    </optgroup>
   `;
 
   if (customMap.size > 0) {
@@ -1903,13 +2000,33 @@ function createInlineEditElement(task) {
   catWrapper.className = 'select-wrapper';
   const catSelect = document.createElement('select');
   catSelect.className = 'select-input compact-select';
+
+  const schoolGroup = document.createElement('optgroup');
+  schoolGroup.label = 'School';
+  const examGroup = document.createElement('optgroup');
+  examGroup.label = 'Exam prep';
+  const otherGroup = document.createElement('optgroup');
+  otherGroup.label = 'Other';
+
   Object.keys(CATEGORIES).forEach(key => {
+    const meta = CATEGORIES[key];
     const opt = document.createElement('option');
     opt.value = key;
-    opt.textContent = key === 'other' ? '📝 Other (type your own)' : `${CATEGORIES[key].icon} ${CATEGORIES[key].label}`;
+    opt.textContent = key === 'other' ? '📝 Other (type your own)' : `${meta.icon} ${meta.label}`;
     if (key === task.category) opt.selected = true;
-    catSelect.appendChild(opt);
+
+    if (meta.group === 'School') {
+      schoolGroup.appendChild(opt);
+    } else if (meta.group === 'Exam prep') {
+      examGroup.appendChild(opt);
+    } else {
+      otherGroup.appendChild(opt);
+    }
   });
+
+  catSelect.appendChild(schoolGroup);
+  catSelect.appendChild(examGroup);
+  catSelect.appendChild(otherGroup);
   catWrapper.appendChild(catSelect);
   optionsRow.appendChild(catWrapper);
 
@@ -2834,6 +2951,153 @@ function closeReminderSettingsModal() {
 }
 
 /**
+ * Generate friendly notification heading and body copy supporting English and Hinglish (Part B).
+ */
+function getNotificationCopy(stage, title, hideTitle = false, lang = 'en', leadHours = 5) {
+  const cleanTitle = (title || 'Task').trim().replace(/\s+/g, ' ').slice(0, 80);
+  const hourStr = leadHours === 24 ? '1 day' : `${leadHours} hours`;
+
+  if (lang === 'hi') {
+    if (hideTitle) {
+      switch (stage) {
+        case '24h':
+          return {
+            heading: '⏰ Kal Assignment Due Hai',
+            content: 'Aapka ek task kal due hai. Aaj hi shuru kar lo!'
+          };
+        case 'lead':
+          return {
+            heading: '⏰ Assignment Due Hone Wala Hai',
+            content: `Aapka ek task ${leadHours} ghante me due hai. Chalo shuru karte hain! 💪`
+          };
+        case '1h':
+          return {
+            heading: '⏳ Sirf 1 Ghanta Bacha Hai',
+            content: 'Aapka ek task sirf 1 ghante me due hai. Last push! 🔥'
+          };
+        case 'overdue':
+          return {
+            heading: '⚠️ Task Ka Time Nikal Gaya',
+            content: 'Aapka ek task overdue ho gaya hai. Abhi complete kar lo!'
+          };
+        case 'test':
+          return {
+            heading: '🔔 Test Notification',
+            content: 'Background reminders chalu hain! Mast padhai karo 🚀'
+          };
+        default:
+          return {
+            heading: '⏰ StudentFlow Reminder',
+            content: 'Aapka ek assignment due hone wala hai.'
+          };
+      }
+    }
+
+    switch (stage) {
+      case '24h':
+        return {
+          heading: '⏰ Kal Due Hai',
+          content: `📅 Kal "${cleanTitle}" due hai. Aaj plan bana lo.`
+        };
+      case 'lead':
+        return {
+          heading: '⏰ Due Hone Wala Hai',
+          content: `⏰ "${cleanTitle}" ${leadHours} ghante me due hai. Chalo shuru karte hain! 💪`
+        };
+      case '1h':
+        return {
+          heading: '⏳ Sirf 1 Ghanta Bacha Hai',
+          content: `⏳ "${cleanTitle}" sirf 1 ghante me due hai. Last push! 🔥`
+        };
+      case 'overdue':
+        return {
+          heading: '⚠️ Time Nikal Gaya',
+          content: `⚠️ "${cleanTitle}" ka time nikal gaya. Abhi complete kar lo!`
+        };
+      case 'test':
+        return {
+          heading: '🔔 Test Notification',
+          content: 'Background reminders chalu hain! Mast padhai karo 🚀'
+        };
+      default:
+        return {
+          heading: '⏰ StudentFlow Reminder',
+          content: `⏰ "${cleanTitle}" due hone me thoda time bacha hai. Chalo shuru karte hain! 💪`
+        };
+    }
+  }
+
+  // English language templates
+  if (hideTitle) {
+    switch (stage) {
+      case '24h':
+        return {
+          heading: '⏰ Assignment Due Tomorrow',
+          content: 'You have a task due tomorrow. Plan ahead to finish strong! 📚'
+        };
+      case 'lead':
+        return {
+          heading: '⏰ Assignment Due Soon',
+          content: `You have a task due in ${hourStr}. Finish it now! 💪`
+        };
+      case '1h':
+        return {
+          heading: '⏳ Due in 1 Hour',
+          content: 'You have a task due in 1 hour. Time for final touches! ⏳'
+        };
+      case 'overdue':
+        return {
+          heading: '⚠️ Assignment Overdue',
+          content: 'You have an overdue task. Finish it to get back on track.'
+        };
+      case 'test':
+        return {
+          heading: '🔔 Test Notification',
+          content: 'Background reminders are active! Happy studying 🚀'
+        };
+      default:
+        return {
+          heading: '⏰ Assignment Reminder',
+          content: 'You have a task due soon. Finish it now! 💪'
+        };
+    }
+  }
+
+  switch (stage) {
+    case '24h':
+      return {
+        heading: '⏰ Due Tomorrow',
+        content: `"${cleanTitle}" is due tomorrow. Plan ahead to finish strong! 📚`
+      };
+    case 'lead':
+      return {
+        heading: '⏰ Due Soon',
+        content: `⏰ "${cleanTitle}" is due in ${hourStr}. Finish it now! 💪`
+      };
+    case '1h':
+      return {
+        heading: '⏳ Due in 1 Hour',
+        content: `⏳ "${cleanTitle}" is due in 1 hour. Time for final touches! ⏳`
+      };
+    case 'overdue':
+      return {
+        heading: '⚠️ Assignment Overdue',
+        content: `⚠️ "${cleanTitle}" is overdue. Finish it to get back on track.`
+      };
+    case 'test':
+      return {
+        heading: '🔔 Test Notification',
+        content: `Background reminders are active for "${cleanTitle}"! 🚀`
+      };
+    default:
+      return {
+        heading: '⏰ Assignment Reminder',
+        content: `⏰ "${cleanTitle}" is due soon. Finish it now! 💪`
+      };
+  }
+}
+
+/**
  * Sync Reminder Settings modal UI elements with current permission and saved settings.
  */
 function syncReminderSettingsUI() {
@@ -2847,15 +3111,23 @@ function syncReminderSettingsUI() {
   if (hideTitlesRow) hideTitlesRow.hidden = !pushConfigured;
   const privacyNote = document.querySelector('.reminder-privacy-note');
   if (privacyNote) privacyNote.hidden = !pushConfigured;
-  const noteCallout = document.querySelector('.reminder-note-callout');
-  if (noteCallout) noteCallout.hidden = pushConfigured;
+  const languageRow = document.getElementById('languageSettingRow');
+  if (languageRow) languageRow.hidden = !pushConfigured;
+  const presetsSection = document.getElementById('reminderPresetsSection');
+  if (presetsSection) presetsSection.hidden = !pushConfigured;
 
   if (DOM.sendTestBtnText) {
     DOM.sendTestBtnText.textContent = pushConfigured ? 'Send test push' : 'Send test notification';
   }
 
   // Permission badge & blocked notice
-  if (!('Notification' in window)) {
+  let perm = 'default';
+  const isUnsupported = !('Notification' in window);
+  if (!isUnsupported) {
+    perm = Notification.permission;
+  }
+
+  if (isUnsupported) {
     if (DOM.reminderPermBadge) {
       DOM.reminderPermBadge.textContent = 'Unsupported';
       DOM.reminderPermBadge.className = 'badge perm-badge denied';
@@ -2866,7 +3138,6 @@ function syncReminderSettingsUI() {
     }
     if (DOM.reminderBlockedHelp) DOM.reminderBlockedHelp.setAttribute('hidden', '');
   } else {
-    const perm = Notification.permission;
     if (DOM.reminderPermBadge) {
       if (perm === 'granted') {
         DOM.reminderPermBadge.textContent = 'Allowed';
@@ -2896,41 +3167,69 @@ function syncReminderSettingsUI() {
     }
   }
 
-  // Push Device Status text and dot
-  if (pushConfigured && DOM.pushStatusText && DOM.pushStatusIndicator) {
-    if ('Notification' in window && Notification.permission === 'denied') {
+  // Push Device Status text and dot ("Reminders are ON for this device" / "Reminders are OFF for this device")
+  if (DOM.pushStatusText && DOM.pushStatusIndicator) {
+    if (!isUnsupported && perm === 'denied') {
       DOM.pushStatusText.textContent = 'Notifications BLOCKED by browser';
       DOM.pushStatusIndicator.className = 'push-status-dot blocked';
-    } else if (isBackgroundPushActive()) {
-      DOM.pushStatusText.textContent = 'Reminders ON for this device';
-      DOM.pushStatusIndicator.className = 'push-status-dot active';
     } else {
-      DOM.pushStatusText.textContent = 'Reminders OFF for this device';
-      DOM.pushStatusIndicator.className = 'push-status-dot';
+      const isActive = pushConfigured ? isBackgroundPushActive() : (settings.enabled && perm === 'granted');
+      if (isActive) {
+        DOM.pushStatusText.textContent = 'Reminders are ON for this device';
+        DOM.pushStatusIndicator.className = 'push-status-dot active';
+      } else {
+        DOM.pushStatusText.textContent = 'Reminders are OFF for this device';
+        DOM.pushStatusIndicator.className = 'push-status-dot';
+      }
     }
   }
 
   // iOS Safari Home Screen instruction
+  const isIosNotStandalone = pushConfigured && isIosSafari() && !isStandalonePwa();
   if (DOM.iosInstallHelp) {
-    if (pushConfigured && isIosSafari() && !isStandalonePwa()) {
+    if (isIosNotStandalone) {
       DOM.iosInstallHelp.removeAttribute('hidden');
     } else {
       DOM.iosInstallHelp.setAttribute('hidden', '');
     }
   }
 
+  // Short Fallback Hint: shown ONLY when background push is unavailable
+  // (permission blocked, unsupported, or iPhone not on Home Screen, or unconfigured)
+  const isPushUnavailable = !pushConfigured || isUnsupported || perm === 'denied' || isIosNotStandalone;
+  if (DOM.reminderFallbackHint) {
+    DOM.reminderFallbackHint.hidden = !isPushUnavailable;
+  }
+
+  // Presets sync
+  const currentPreset = settings.preset || deducePreset(settings.ladder24h, settings.ladderLead, settings.leadTimeHours, settings.ladder1h, settings.ladderOverdue);
+  if (DOM.activePresetBadge) {
+    if (currentPreset === 'light') DOM.activePresetBadge.textContent = 'Light';
+    else if (currentPreset === 'careful') DOM.activePresetBadge.textContent = 'Extra careful';
+    else if (currentPreset === 'custom') DOM.activePresetBadge.textContent = 'Custom';
+    else DOM.activePresetBadge.textContent = 'Normal';
+  }
+
+  if (DOM.presetRadioLight) DOM.presetRadioLight.checked = (currentPreset === 'light');
+  if (DOM.presetRadioNormal) DOM.presetRadioNormal.checked = (currentPreset === 'normal');
+  if (DOM.presetRadioCareful) DOM.presetRadioCareful.checked = (currentPreset === 'careful');
+
+  if (DOM.presetCardLight) DOM.presetCardLight.classList.toggle('active', currentPreset === 'light');
+  if (DOM.presetCardNormal) DOM.presetCardNormal.classList.toggle('active', currentPreset === 'normal');
+  if (DOM.presetCardCareful) DOM.presetCardCareful.classList.toggle('active', currentPreset === 'careful');
+
   // Ladder toggles
   if (DOM.reminderLadder24hToggle) {
-    DOM.reminderLadder24hToggle.checked = settings.ladder24h !== false;
+    DOM.reminderLadder24hToggle.checked = Boolean(settings.ladder24h);
   }
   if (DOM.reminderLadderLeadToggle) {
-    DOM.reminderLadderLeadToggle.checked = settings.ladderLead !== false;
+    DOM.reminderLadderLeadToggle.checked = Boolean(settings.ladderLead);
   }
   if (DOM.reminderLadder1hToggle) {
-    DOM.reminderLadder1hToggle.checked = settings.ladder1h !== false;
+    DOM.reminderLadder1hToggle.checked = Boolean(settings.ladder1h);
   }
   if (DOM.reminderLadderOverdueToggle) {
-    DOM.reminderLadderOverdueToggle.checked = settings.ladderOverdue !== false;
+    DOM.reminderLadderOverdueToggle.checked = Boolean(settings.ladderOverdue);
   }
   if (DOM.reminderHideTitlesToggle) {
     DOM.reminderHideTitlesToggle.checked = Boolean(settings.hideTitles);
@@ -2939,6 +3238,11 @@ function syncReminderSettingsUI() {
   // Lead Time Select
   if (DOM.reminderLeadTimeSelect) {
     DOM.reminderLeadTimeSelect.value = String(settings.leadTimeHours || 5);
+  }
+
+  // Notification Language Select
+  if (DOM.reminderLangSelect) {
+    DOM.reminderLangSelect.value = settings.lang || 'en';
   }
 
   // Quiet Hours
@@ -2984,6 +3288,45 @@ function setupReminderSettingsModal() {
       e.preventDefault();
       closeReminderSettingsModal();
     }
+  });
+
+  // Preset Radios (Light, Normal, Extra careful)
+  const presetRadios = document.querySelectorAll('input[name="reminderPreset"]');
+  presetRadios.forEach(radio => {
+    radio.addEventListener('change', () => {
+      const selected = radio.value;
+      const settings = loadSettings();
+      settings.preset = selected;
+
+      if (selected === 'light') {
+        settings.ladder24h = false;
+        settings.ladderLead = false;
+        settings.ladder1h = true;
+        settings.ladderOverdue = true;
+      } else if (selected === 'careful') {
+        settings.ladder24h = true;
+        settings.ladderLead = true;
+        settings.leadTimeHours = 5;
+        settings.ladder1h = true;
+        settings.ladderOverdue = true;
+      } else {
+        // 'normal' (default)
+        settings.ladder24h = false;
+        settings.ladderLead = true;
+        settings.leadTimeHours = 5;
+        settings.ladder1h = true;
+        settings.ladderOverdue = true;
+      }
+
+      saveSettings(settings);
+      reconcileScheduledPushes();
+      syncReminderSettingsUI();
+      checkAndNotifyDueTasks();
+      updateDueSoonBanner();
+
+      const presetLabel = selected === 'light' ? 'Light' : selected === 'careful' ? 'Extra careful' : 'Normal';
+      showToast(`Reminder preset switched to "${presetLabel}".`, 'info');
+    });
   });
 
   // Master on/off toggle (Permission is requested ONLY on this click)
@@ -3098,43 +3441,46 @@ function setupReminderSettingsModal() {
     });
   }
 
-  // Ladder Rung 1: 24h
-  if (DOM.reminderLadder24hToggle) {
-    DOM.reminderLadder24hToggle.addEventListener('change', () => {
+  // Handler for any manual ladder toggle change in "More options"
+  const handleLadderChange = () => {
+    const settings = loadSettings();
+    if (DOM.reminderLadder24hToggle) settings.ladder24h = DOM.reminderLadder24hToggle.checked;
+    if (DOM.reminderLadderLeadToggle) settings.ladderLead = DOM.reminderLadderLeadToggle.checked;
+    if (DOM.reminderLadder1hToggle) settings.ladder1h = DOM.reminderLadder1hToggle.checked;
+    if (DOM.reminderLadderOverdueToggle) settings.ladderOverdue = DOM.reminderLadderOverdueToggle.checked;
+    if (DOM.reminderLeadTimeSelect) settings.leadTimeHours = Number(DOM.reminderLeadTimeSelect.value) || 5;
+
+    // Deduce if matches preset or switches to Custom
+    settings.preset = deducePreset(settings.ladder24h, settings.ladderLead, settings.leadTimeHours, settings.ladder1h, settings.ladderOverdue);
+
+    saveSettings(settings);
+    reconcileScheduledPushes();
+    syncReminderSettingsUI();
+    checkAndNotifyDueTasks();
+    updateDueSoonBanner();
+  };
+
+  if (DOM.reminderLadder24hToggle) DOM.reminderLadder24hToggle.addEventListener('change', handleLadderChange);
+  if (DOM.reminderLadderLeadToggle) DOM.reminderLadderLeadToggle.addEventListener('change', handleLadderChange);
+  if (DOM.reminderLadder1hToggle) DOM.reminderLadder1hToggle.addEventListener('change', handleLadderChange);
+  if (DOM.reminderLadderOverdueToggle) DOM.reminderLadderOverdueToggle.addEventListener('change', handleLadderChange);
+  if (DOM.reminderLeadTimeSelect) {
+    DOM.reminderLeadTimeSelect.addEventListener('change', () => {
+      handleLadderChange();
       const settings = loadSettings();
-      settings.ladder24h = DOM.reminderLadder24hToggle.checked;
-      saveSettings(settings);
-      reconcileScheduledPushes();
+      showToast(`Advance reminders set to ${settings.leadTimeHours} hour${settings.leadTimeHours === 1 ? '' : 's'} before deadline.`, 'info');
     });
   }
 
-  // Ladder Rung 2: Lead time toggle
-  if (DOM.reminderLadderLeadToggle) {
-    DOM.reminderLadderLeadToggle.addEventListener('change', () => {
+  // Notification language select
+  if (DOM.reminderLangSelect) {
+    DOM.reminderLangSelect.addEventListener('change', () => {
       const settings = loadSettings();
-      settings.ladderLead = DOM.reminderLadderLeadToggle.checked;
+      settings.lang = DOM.reminderLangSelect.value === 'hi' ? 'hi' : 'en';
       saveSettings(settings);
       reconcileScheduledPushes();
-    });
-  }
-
-  // Ladder Rung 3: 1h
-  if (DOM.reminderLadder1hToggle) {
-    DOM.reminderLadder1hToggle.addEventListener('change', () => {
-      const settings = loadSettings();
-      settings.ladder1h = DOM.reminderLadder1hToggle.checked;
-      saveSettings(settings);
-      reconcileScheduledPushes();
-    });
-  }
-
-  // Ladder Rung 4: Overdue
-  if (DOM.reminderLadderOverdueToggle) {
-    DOM.reminderLadderOverdueToggle.addEventListener('change', () => {
-      const settings = loadSettings();
-      settings.ladderOverdue = DOM.reminderLadderOverdueToggle.checked;
-      saveSettings(settings);
-      reconcileScheduledPushes();
+      const langLabel = settings.lang === 'hi' ? 'Hinglish' : 'English';
+      showToast(`Notification language set to ${langLabel}.`, 'info');
     });
   }
 
@@ -3146,19 +3492,6 @@ function setupReminderSettingsModal() {
       saveSettings(settings);
       reconcileScheduledPushes();
       showToast(settings.hideTitles ? 'Task titles hidden in notification alerts.' : 'Task titles shown in notification alerts.', 'info');
-    });
-  }
-
-  // Lead-time select change
-  if (DOM.reminderLeadTimeSelect) {
-    DOM.reminderLeadTimeSelect.addEventListener('change', () => {
-      const settings = loadSettings();
-      settings.leadTimeHours = Number(DOM.reminderLeadTimeSelect.value) || 5;
-      saveSettings(settings);
-      reconcileScheduledPushes();
-      checkAndNotifyDueTasks();
-      updateDueSoonBanner();
-      showToast(`Advance reminders set to ${settings.leadTimeHours} hour${settings.leadTimeHours === 1 ? '' : 's'} before deadline.`, 'info');
     });
   }
 
@@ -3195,6 +3528,7 @@ function setupReminderSettingsModal() {
   // Send Test Notification / Push button
   if (DOM.sendTestNotificationBtn) {
     DOM.sendTestNotificationBtn.addEventListener('click', async () => {
+      const settings = loadSettings();
       if (isPushConfigured()) {
         if (!isBackgroundPushActive()) {
           showToast('Please enable background reminders above first.', 'info');
@@ -3208,7 +3542,7 @@ function setupReminderSettingsModal() {
         }
 
         DOM.sendTestNotificationBtn.disabled = true;
-        const originalText = DOM.sendTestBtnText ? DOM.sendTestBtnText.textContent : 'Send test push';
+        const originalText = DOM.sendTestBtnText ? DOM.sendTestBtnText.textContent : 'Send test notification';
         if (DOM.sendTestBtnText) DOM.sendTestBtnText.textContent = 'Scheduling...';
 
         try {
@@ -3223,7 +3557,9 @@ function setupReminderSettingsModal() {
               sendAt: testSendAt,
               title: 'StudentFlow',
               url: window.location.href,
-              hideTitle: Boolean(loadSettings().hideTitles)
+              hideTitle: Boolean(settings.hideTitles),
+              lang: settings.lang || 'en',
+              leadHours: settings.leadTimeHours || 5
             })
           });
 
@@ -3266,12 +3602,13 @@ function setupReminderSettingsModal() {
       const totalCount = state.tasks.length;
       const completedCount = state.tasks.filter(t => t.completed).length;
       const targetCount = Math.min(totalCount, completedCount + 1);
-      const testBody = totalCount > 0
+      const testCopy = getNotificationCopy('test', 'StudentFlow', false, settings.lang || 'en');
+      const progressSnippet = totalCount > 0
         ? `You've completed ${completedCount} of ${totalCount} tasks. Finish this one to reach ${targetCount}/${totalCount}! 💪`
         : `Start adding assignments to track your progress! 💪`;
 
-      sendNotification('⏰ StudentFlow Test Alert', {
-        body: testBody,
+      sendNotification(testCopy.heading, {
+        body: `${testCopy.content}\n${progressSnippet}`,
         icon: './icon-192.png',
         badge: './icon-192.png',
         tag: 'studentflow-test',
@@ -3537,11 +3874,10 @@ function checkAndNotifyDueTasks() {
       if (record.soon !== deadlineStamp) {
         const remainingMs = deadlineStamp - now;
         const remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
-        const hourLabel = remainingHours <= 1 ? '1 hour' : `${remainingHours} hours`;
-        const title = `⏰ "${task.title}" is due in ${hourLabel}`;
+        const notifData = getNotificationCopy('lead', task.title, Boolean(settings.hideTitles), settings.lang || 'en', remainingHours);
 
-        sendNotification(title, {
-          body: progressBody,
+        sendNotification(notifData.heading, {
+          body: `${notifData.content}\n${progressBody}`,
           icon: './icon-192.png',
           badge: './icon-192.png',
           tag: `${task.id}_soon`,
@@ -3557,10 +3893,10 @@ function checkAndNotifyDueTasks() {
     // Stage 2: "overdue" notification (now >= deadline)
     if (now >= deadlineStamp) {
       if (record.overdue !== deadlineStamp) {
-        const title = `⚠️ "${task.title}" is overdue`;
+        const notifData = getNotificationCopy('overdue', task.title, Boolean(settings.hideTitles), settings.lang || 'en');
 
-        sendNotification(title, {
-          body: progressBody,
+        sendNotification(notifData.heading, {
+          body: `${notifData.content}\n${progressBody}`,
           icon: './icon-192.png',
           badge: './icon-192.png',
           tag: `${task.id}_overdue`,

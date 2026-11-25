@@ -49,10 +49,29 @@ function sanitizeText(str, maxLength = 80) {
 }
 
 /**
- * Build notification content based on stage and privacy settings
+ * Build notification content based on stage, language and privacy settings
  */
-function buildNotificationPayload(stage, title, hideTitle) {
+function buildNotificationPayload(stage, title, hideTitle, lang = 'en', leadHours = 5) {
+  const isHi = lang === 'hi';
+  const cleanTitle = title || (isHi ? 'Assignment' : 'Assignment');
+  const hours = (typeof leadHours === 'number' && leadHours > 0) ? leadHours : 5;
+  const hourStr = hours === 1 ? '1 hour' : `${hours} hours`;
+  const ghanteStr = `${hours} ghante`;
+
   if (hideTitle) {
+    if (isHi) {
+      if (stage === 'overdue') {
+        return {
+          heading: 'StudentFlow Reminder',
+          content: '⚠️ Ek assignment ka time nikal gaya. Abhi complete kar lo!'
+        };
+      }
+      return {
+        heading: 'StudentFlow Reminder',
+        content: '⏰ Ek assignment jald hi due hai. Chalo shuru karte hain! 💪'
+      };
+    }
+
     if (stage === 'overdue') {
       return {
         heading: 'StudentFlow Reminder',
@@ -65,7 +84,43 @@ function buildNotificationPayload(stage, title, hideTitle) {
     };
   }
 
-  const cleanTitle = title || 'Assignment';
+  // Hinglish language templates
+  if (isHi) {
+    switch (stage) {
+      case '24h':
+        return {
+          heading: '📅 Kal Due Hai',
+          content: `📅 Kal "${cleanTitle}" due hai. Aaj plan bana lo.`
+        };
+      case 'lead':
+        return {
+          heading: '⏰ Due Hone Wala Hai',
+          content: `⏰ "${cleanTitle}" ${ghanteStr} me due hai. Chalo shuru karte hain! 💪`
+        };
+      case '1h':
+        return {
+          heading: '⏳ Sirf 1 Ghanta Bacha Hai',
+          content: `⏳ "${cleanTitle}" sirf 1 ghante me due hai. Last push! 🔥`
+        };
+      case 'overdue':
+        return {
+          heading: '⚠️ Time Nikal Gaya',
+          content: `⚠️ "${cleanTitle}" ka time nikal gaya. Abhi complete kar lo!`
+        };
+      case 'test':
+        return {
+          heading: '🔔 Test Notification',
+          content: `Background reminders chalu hain! Mast padhai karo 🚀`
+        };
+      default:
+        return {
+          heading: '⏰ StudentFlow Reminder',
+          content: `⏰ "${cleanTitle}" due hone me thoda time bacha hai. Chalo shuru karte hain! 💪`
+        };
+    }
+  }
+
+  // English language templates
   switch (stage) {
     case '24h':
       return {
@@ -75,17 +130,17 @@ function buildNotificationPayload(stage, title, hideTitle) {
     case 'lead':
       return {
         heading: '⏰ Due Soon',
-        content: `"${cleanTitle}" is due soon. Finish it now! 💪`
+        content: `⏰ "${cleanTitle}" is due in ${hourStr}. Finish it now! 💪`
       };
     case '1h':
       return {
         heading: '⏳ Due in 1 Hour',
-        content: `"${cleanTitle}" is due in 1 hour. Time for final touches! ⏳`
+        content: `⏳ "${cleanTitle}" is due in 1 hour. Time for final touches! ⏳`
       };
     case 'overdue':
       return {
         heading: '⚠️ Assignment Overdue',
-        content: `"${cleanTitle}" is overdue. Finish it to get back on track.`
+        content: `⚠️ "${cleanTitle}" is overdue. Finish it to get back on track.`
       };
     case 'test':
       return {
@@ -95,7 +150,7 @@ function buildNotificationPayload(stage, title, hideTitle) {
     default:
       return {
         heading: '⏰ Assignment Reminder',
-        content: `"${cleanTitle}" is due soon. Finish it now! 💪`
+        content: `⏰ "${cleanTitle}" is due soon. Finish it now! 💪`
       };
   }
 }
@@ -167,7 +222,7 @@ export default {
 
     // ROUTE: POST /schedule
     if (url.pathname === '/schedule') {
-      const { subscriptionId, taskId, stage, sendAt, title, url: clientUrl, hideTitle } = payload;
+      const { subscriptionId, taskId, stage, sendAt, title, url: clientUrl, hideTitle, lang, leadHours } = payload;
 
       // 1. Validate subscription ID (UUID)
       if (typeof subscriptionId !== 'string' || !UUID_REGEX.test(subscriptionId)) {
@@ -218,11 +273,15 @@ export default {
         clickUrl = clientUrl;
       }
 
-      // 7. Compose text payload
-      const { heading, content } = buildNotificationPayload(stage, cleanTitle, Boolean(hideTitle));
+      // 7. Language and Lead Hours validation
+      const validLang = (typeof lang === 'string' && lang.toLowerCase() === 'hi') ? 'hi' : 'en';
+      const parsedLeadHours = (typeof leadHours === 'number' && leadHours > 0) ? Math.min(Math.round(leadHours), 72) : 5;
 
-      // 8. Idempotency Key (taskId + stage + sendTimestamp)
-      const idempotencyKey = `sf-${taskId}-${stage}-${sendTimestamp}`.slice(0, 128);
+      // 8. Compose text payload
+      const { heading, content } = buildNotificationPayload(stage, cleanTitle, Boolean(hideTitle), validLang, parsedLeadHours);
+
+      // 9. Idempotency Key (taskId + stage + lang + sendTimestamp)
+      const idempotencyKey = `sf-${taskId}-${stage}-${validLang}-${sendTimestamp}`.slice(0, 128);
 
       // 9. Call OneSignal REST API to create scheduled notification
       const onesignalBody = {
@@ -232,7 +291,6 @@ export default {
         headings: { en: heading },
         contents: { en: content },
         url: clickUrl,
-        web_url: clickUrl,
         data: {
           taskId: taskId,
           stage: stage
