@@ -2077,6 +2077,25 @@ body {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+}
+
+.reminder-settings-card .reminder-settings-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.reminder-settings-card .reminder-settings-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.reminder-settings-card .reminder-settings-body::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: var(--radius-full);
+}
+
+.reminder-settings-card .reminder-settings-body::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
 .reminder-settings-card .modal-actions {
