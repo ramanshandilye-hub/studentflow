@@ -283,7 +283,22 @@ export default {
       // 9. Idempotency Key (taskId + stage + lang + sendTimestamp)
       const idempotencyKey = `sf-${taskId}-${stage}-${validLang}-${sendTimestamp}`.slice(0, 128);
 
-      // 9. Call OneSignal REST API to create scheduled notification
+      // Web push topic (max 64 chars) to allow stacking across distinct tasks/stages
+      let webPushTopic = `sf-${taskId}-${stage}`;
+      if (webPushTopic.length > 64) {
+        let hash = 0;
+        for (let i = 0; i < taskId.length; i++) {
+          hash = ((hash << 5) - hash) + taskId.charCodeAt(i);
+          hash |= 0;
+        }
+        const hashStr = Math.abs(hash).toString(16);
+        webPushTopic = `sf-${taskId.slice(0, 48 - stage.length)}-${stage}-${hashStr}`.slice(0, 64);
+      }
+
+      // Delivery TTL: 6 hours (21600s) for 24h and lead, 2 hours (7200s) for 1h, overdue, test
+      const ttlSeconds = (stage === '24h' || stage === 'lead') ? 21600 : 7200;
+
+      // 10. Call OneSignal REST API to create scheduled notification
       const onesignalBody = {
         app_id: env.ONESIGNAL_APP_ID,
         include_subscription_ids: [subscriptionId],
@@ -295,8 +310,11 @@ export default {
           taskId: taskId,
           stage: stage
         },
+        web_push_topic: webPushTopic,
+        priority: 10,
+        ttl: ttlSeconds,
         chrome_web_icon: `${ALLOWED_ORIGIN}/studentflow/icon-192.png`,
-        chrome_web_badge: `${ALLOWED_ORIGIN}/studentflow/icon-192.png`
+        chrome_web_badge: `${ALLOWED_ORIGIN}/studentflow/badge-72.png`
       };
 
       try {

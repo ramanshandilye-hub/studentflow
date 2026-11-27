@@ -10,7 +10,7 @@ try {
  * Enables offline capability, background push, and PWA installability.
  */
 
-const CACHE_NAME = 'studentflow-v9';
+const CACHE_NAME = 'studentflow-v10';
 const ASSETS_TO_CACHE = [
   './',
   './index.html',
@@ -19,7 +19,8 @@ const ASSETS_TO_CACHE = [
   './manifest.json',
   './icon.svg',
   './icon-192.png',
-  './icon-512.png'
+  './icon-512.png',
+  './badge-72.png'
 ];
 
 // Install event: cache all shell assets

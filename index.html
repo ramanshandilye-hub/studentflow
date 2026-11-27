@@ -45,8 +45,7 @@
             <div class="greeting-container">
               <div class="greeting-display" id="greetingDisplay" aria-live="polite">
                 <span id="greetingPrefix" class="greeting-text">Good morning, </span>
-                <span id="greetingNameDisplay" class="greeting-name" tabindex="0" role="button" aria-label="Your name, click to edit" title="Click to edit your name">Student</span>
-                <input
+                <span id="greetingNameDisplay" class="greeting-name" tabindex="0" role="button" aria-label="Your name, click to edit" title="Click to edit your name">Student</span><input
                   type="text"
                   id="greetingNameInput"
                   class="greeting-name-input"
@@ -54,8 +53,7 @@
                   aria-label="Edit your name"
                   autocomplete="off"
                   hidden
-                >
-                <span id="greetingSuffix" class="greeting-text">! ☀️ Ready to study?</span>
+                ><span id="greetingSuffix" class="greeting-text">! ☀️ Ready to study?</span>
                 <button type="button" id="editGreetingBtn" class="edit-greeting-btn" aria-label="Edit your name" title="Edit your name">
                   <svg class="edit-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -772,8 +770,8 @@
                 </div>
               </div>
 
-              <!-- Quiet Hours Toggle -->
-              <div class="setting-row" id="quietHoursSettingRow">
+              <!-- Quiet Hours Toggle (hidden per request) -->
+              <div class="setting-row" id="quietHoursSettingRow" hidden>
                 <div class="setting-info">
                   <label for="reminderQuietHoursToggle" class="setting-label">Quiet Hours</label>
                   <span class="setting-desc">Mute alerts during sleep or study hours (works across midnight)</span>

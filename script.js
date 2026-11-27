@@ -31,8 +31,8 @@ function isPushConfigured() {
   if (!ONESIGNAL_APP_ID || !PUSH_API_URL) return false;
   const appIdTrim = String(ONESIGNAL_APP_ID).trim();
   const urlTrim = String(PUSH_API_URL).trim();
-  if (!appIdTrim || appIdTrim === 'YOUR_ONESIGNAL_APP_ID') return false;
-  if (!urlTrim || urlTrim.includes('your-subdomain') || urlTrim.includes('your-worker')) return false;
+  if (!appIdTrim || appIdTrim === 'YOUR_ONESIGNAL_APP_ID' || appIdTrim.includes('YOUR_') || appIdTrim.length < 10) return false;
+  if (!urlTrim || urlTrim.includes('your-subdomain') || urlTrim.includes('your-worker') || urlTrim.includes('<subdomain>') || urlTrim.length < 8) return false;
   return true;
 }
 
@@ -471,23 +471,6 @@ function deducePreset(ladder24h, ladderLead, leadTimeHours, ladder1h, ladderOver
 }
 
 /**
- * Check if background push notification credentials have been filled in.
- */
-function isPushConfigured() {
-  return Boolean(
-    ONESIGNAL_APP_ID &&
-    typeof ONESIGNAL_APP_ID === 'string' &&
-    !ONESIGNAL_APP_ID.includes('YOUR_') &&
-    ONESIGNAL_APP_ID.trim().length > 10 &&
-    PUSH_API_URL &&
-    typeof PUSH_API_URL === 'string' &&
-    !PUSH_API_URL.includes('<subdomain>') &&
-    !PUSH_API_URL.includes('your-worker') &&
-    PUSH_API_URL.trim().length > 8
-  );
-}
-
-/**
  * Load reminder settings from LocalStorage ('studentflow_settings_v1') with fallback.
  */
 function loadSettings() {
@@ -586,6 +569,45 @@ function savePushQueue(queue) {
 }
 
 /**
+ * Atomically remove an operation by its unique ID from the stored push queue.
+ * Never overwrites storage with a stale queue snapshot.
+ */
+function removePushOperation(opId) {
+  try {
+    const currentQueue = loadPushQueue();
+    const filtered = currentQueue.filter(op => op.id !== opId);
+    savePushQueue(filtered);
+  } catch (err) {
+    console.warn('Failed to remove push operation:', err);
+  }
+}
+
+/**
+ * Record a transient retry attempt with exponential backoff on an operation.
+ * Dropped after 5 failed attempts with a console warning.
+ */
+function recordPushOpRetry(opId, errorMsg) {
+  try {
+    const currentQueue = loadPushQueue();
+    const op = currentQueue.find(item => item.id === opId);
+    if (!op) return;
+
+    const retryCount = (op.retryCount || 0) + 1;
+    if (retryCount >= 5) {
+      console.warn(`[StudentFlow Push] Dropping op ${opId} (${op.action}) after 5 failed attempts:`, errorMsg);
+      savePushQueue(currentQueue.filter(item => item.id !== opId));
+    } else {
+      op.retryCount = retryCount;
+      const backoffMs = Math.min(1000 * Math.pow(2, retryCount), 30000);
+      op.nextAttemptAt = Date.now() + backoffMs;
+      savePushQueue(currentQueue);
+    }
+  } catch (err) {
+    console.warn('Failed to record retry for push op:', err);
+  }
+}
+
+/**
  * Enqueue an operation to the offline push queue and trigger process
  */
 function enqueuePushOperation(action, payload) {
@@ -602,87 +624,114 @@ function enqueuePushOperation(action, payload) {
   }
 }
 
-let isProcessingQueue = false;
+let queueProcessingPromise = null;
 
 /**
- * Process offline push operations queue when online
+ * Process offline push operations queue when online.
+ * Serialized via a single lock promise; loops until the stored queue is empty.
+ * In-flight enqueues are never lost because each op is removed individually by ID upon success or permanent 4xx failure.
  */
-async function processPushQueue() {
-  if (isProcessingQueue || !navigator.onLine || !isPushConfigured()) return;
-  isProcessingQueue = true;
+function processPushQueue() {
+  if (!navigator.onLine || !isPushConfigured()) return Promise.resolve();
+  if (queueProcessingPromise) return queueProcessingPromise;
 
-  try {
-    const queue = loadPushQueue();
-    if (queue.length === 0) return;
+  queueProcessingPromise = (async () => {
+    try {
+      while (navigator.onLine && isPushConfigured()) {
+        const queue = loadPushQueue();
+        if (queue.length === 0) break;
 
-    const remainingQueue = [];
+        const now = Date.now();
+        const op = queue.find(item => !item.nextAttemptAt || item.nextAttemptAt <= now);
+        if (!op) {
+          // All remaining operations are waiting for backoff timer
+          break;
+        }
 
-    // Group cancel operations together (up to 12 IDs per batch)
-    const cancelIds = [];
-    const scheduleOps = [];
-
-    for (const item of queue) {
-      if (item.action === 'cancel' && item.payload && Array.isArray(item.payload.ids)) {
-        cancelIds.push(...item.payload.ids);
-      } else if (item.action === 'schedule' && item.payload) {
-        scheduleOps.push(item);
-      }
-    }
-
-    // Process cancels in batches of 12
-    if (cancelIds.length > 0) {
-      const uniqueIds = Array.from(new Set(cancelIds));
-      while (uniqueIds.length > 0) {
-        const batch = uniqueIds.splice(0, 12);
-        try {
-          const res = await fetch(`${PUSH_API_URL.replace(/\/$/, '')}/cancel`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ids: batch })
-          });
-          if (!res.ok && res.status >= 500) {
-            remainingQueue.push({ action: 'cancel', payload: { ids: batch } });
+        if (op.action === 'cancel') {
+          const ids = (op.payload && Array.isArray(op.payload.ids)) ? op.payload.ids : [];
+          if (ids.length === 0) {
+            removePushOperation(op.id);
+            continue;
           }
-        } catch (err) {
-          remainingQueue.push({ action: 'cancel', payload: { ids: batch } });
+
+          let res;
+          let netErr = null;
+          try {
+            res = await fetch(`${PUSH_API_URL.replace(/\/$/, '')}/cancel`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ ids: ids.slice(0, 12) })
+            });
+          } catch (err) {
+            netErr = err;
+          }
+
+          if (netErr || (res && res.status >= 500)) {
+            const msg = netErr ? netErr.message : `HTTP ${res.status}`;
+            recordPushOpRetry(op.id, msg);
+          } else {
+            if (res && !res.ok) {
+              console.warn(`[StudentFlow Push] Cancel op ${op.id} permanent error: HTTP ${res.status}`);
+            }
+            removePushOperation(op.id);
+          }
+        } else if (op.action === 'schedule') {
+          const payload = op.payload;
+          if (!payload || !payload.taskId || !payload.stage || !payload.sendAt) {
+            removePushOperation(op.id);
+            continue;
+          }
+
+          let res;
+          let netErr = null;
+          try {
+            res = await fetch(`${PUSH_API_URL.replace(/\/$/, '')}/schedule`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+          } catch (err) {
+            netErr = err;
+          }
+
+          if (netErr || (res && res.status >= 500)) {
+            const msg = netErr ? netErr.message : `HTTP ${res.status}`;
+            recordPushOpRetry(op.id, msg);
+          } else if (res && res.ok) {
+            try {
+              const data = await res.json();
+              if (data && data.messageId) {
+                const pushMap = loadPushMap();
+                if (!pushMap[payload.taskId]) pushMap[payload.taskId] = {};
+                pushMap[payload.taskId][payload.stage] = {
+                  messageId: data.messageId,
+                  sendAt: payload.sendAt,
+                  lang: payload.lang || 'en',
+                  hideTitle: Boolean(payload.hideTitle),
+                  leadHours: payload.leadHours || 5
+                };
+                savePushMap(pushMap);
+              }
+            } catch (jsonErr) {
+              console.warn('Failed parsing schedule response:', jsonErr);
+            }
+            removePushOperation(op.id);
+          } else {
+            // Permanent 4xx error (e.g. invalid date or body): drop without retry
+            console.warn(`[StudentFlow Push] Schedule op ${op.id} permanent error: HTTP ${res ? res.status : 'unknown'}`);
+            removePushOperation(op.id);
+          }
+        } else {
+          removePushOperation(op.id);
         }
       }
+    } finally {
+      queueProcessingPromise = null;
     }
+  })();
 
-    // Process schedules
-    for (const op of scheduleOps) {
-      try {
-        const res = await fetch(`${PUSH_API_URL.replace(/\/$/, '')}/schedule`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(op.payload)
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data && data.messageId) {
-            const pushMap = loadPushMap();
-            if (!pushMap[op.payload.taskId]) pushMap[op.payload.taskId] = {};
-            pushMap[op.payload.taskId][op.payload.stage] = {
-              messageId: data.messageId,
-              sendAt: op.payload.sendAt,
-              lang: op.payload.lang || 'en',
-              hideTitle: Boolean(op.payload.hideTitle),
-              leadHours: op.payload.leadHours || 5
-            };
-            savePushMap(pushMap);
-          }
-        } else if (res.status >= 500) {
-          remainingQueue.push(op);
-        }
-      } catch (err) {
-        remainingQueue.push(op);
-      }
-    }
-
-    savePushQueue(remainingQueue);
-  } finally {
-    isProcessingQueue = false;
-  }
+  return queueProcessingPromise;
 }
 
 /**
@@ -855,6 +904,8 @@ function reconcileScheduledPushes() {
   const pushMap = loadPushMap();
   const idsToCancel = [];
   let mapModified = false;
+  let scheduledCount = 0;
+  let cancelledCount = 0;
 
   const subscriptionId = getOneSignalSubscriptionId();
   const pushActive = isBackgroundPushActive();
@@ -875,7 +926,9 @@ function reconcileScheduledPushes() {
     });
 
     if (idsToCancel.length > 0) {
-      enqueuePushOperation('cancel', { ids: idsToCancel });
+      const uniqueCancelIds = Array.from(new Set(idsToCancel));
+      enqueuePushOperation('cancel', { ids: uniqueCancelIds });
+      console.info(`[StudentFlow Push] Reconciled scheduled reminders: 0 scheduled, ${uniqueCancelIds.length} cancelled.`);
     }
     if (mapModified) {
       savePushMap(pushMap);
@@ -983,6 +1036,8 @@ function reconcileScheduledPushes() {
 
     desiredRungs.forEach(rung => {
       const existing = currentTaskStages[rung.stage];
+      const targetSendAt = new Date(rung.timestamp).toISOString();
+
       if (existing) {
         const existingStamp = new Date(existing.sendAt).getTime();
         const timeChanged = Math.abs(existingStamp - rung.timestamp) > 2000;
@@ -997,11 +1052,49 @@ function reconcileScheduledPushes() {
           delete currentTaskStages[rung.stage];
           mapModified = true;
 
+          // Prevent enqueuing duplicate unconfirmed operation
+          const currentQueue = loadPushQueue();
+          const alreadyQueued = currentQueue.some(op =>
+            op.action === 'schedule' &&
+            op.payload &&
+            op.payload.taskId === task.id &&
+            op.payload.stage === rung.stage &&
+            op.payload.sendAt === targetSendAt
+          );
+
+          if (!alreadyQueued) {
+            const payload = {
+              subscriptionId,
+              taskId: task.id,
+              stage: rung.stage,
+              sendAt: targetSendAt,
+              title: task.title,
+              url: `${window.location.origin}${window.location.pathname}#task-${task.id}`,
+              hideTitle: targetHideTitle,
+              lang: targetLang,
+              leadHours: targetLeadHours
+            };
+            enqueuePushOperation('schedule', payload);
+            scheduledCount++;
+          }
+        }
+      } else {
+        // Not in pushMap yet. Check if already queued unconfirmed to prevent duplicates on repeated calls.
+        const currentQueue = loadPushQueue();
+        const alreadyQueued = currentQueue.some(op =>
+          op.action === 'schedule' &&
+          op.payload &&
+          op.payload.taskId === task.id &&
+          op.payload.stage === rung.stage &&
+          op.payload.sendAt === targetSendAt
+        );
+
+        if (!alreadyQueued) {
           const payload = {
             subscriptionId,
             taskId: task.id,
             stage: rung.stage,
-            sendAt: new Date(rung.timestamp).toISOString(),
+            sendAt: targetSendAt,
             title: task.title,
             url: `${window.location.origin}${window.location.pathname}#task-${task.id}`,
             hideTitle: targetHideTitle,
@@ -1009,30 +1102,23 @@ function reconcileScheduledPushes() {
             leadHours: targetLeadHours
           };
           enqueuePushOperation('schedule', payload);
+          scheduledCount++;
         }
-      } else {
-        // Not scheduled yet
-        const payload = {
-          subscriptionId,
-          taskId: task.id,
-          stage: rung.stage,
-          sendAt: new Date(rung.timestamp).toISOString(),
-          title: task.title,
-          url: `${window.location.origin}${window.location.pathname}#task-${task.id}`,
-          hideTitle: targetHideTitle,
-          lang: targetLang,
-          leadHours: targetLeadHours
-        };
-        enqueuePushOperation('schedule', payload);
       }
     });
   });
 
   if (idsToCancel.length > 0) {
-    enqueuePushOperation('cancel', { ids: idsToCancel });
+    const uniqueCancelIds = Array.from(new Set(idsToCancel));
+    cancelledCount = uniqueCancelIds.length;
+    enqueuePushOperation('cancel', { ids: uniqueCancelIds });
   }
   if (mapModified) {
     savePushMap(pushMap);
+  }
+
+  if (scheduledCount > 0 || cancelledCount > 0) {
+    console.info(`[StudentFlow Push] Reconciled scheduled reminders: ${scheduledCount} scheduled, ${cancelledCount} cancelled.`);
   }
 }
 
@@ -3202,7 +3288,7 @@ function syncReminderSettingsUI() {
   const privacyNote = document.querySelector('.reminder-privacy-note');
   if (privacyNote) privacyNote.hidden = !pushConfigured;
   const languageRow = document.getElementById('languageSettingRow');
-  if (languageRow) languageRow.hidden = !pushConfigured;
+  if (languageRow) languageRow.hidden = false;
   const presetsSection = document.getElementById('reminderPresetsSection');
   if (presetsSection) presetsSection.hidden = !pushConfigured;
 
@@ -3339,12 +3425,12 @@ function syncReminderSettingsUI() {
     DOM.reminderLangSelect.value = settings.lang || 'en';
   }
 
-  // Quiet Hours
+  // Quiet Hours (kept hidden per user request; settings preserved)
+  const quietHoursRow = document.getElementById('quietHoursSettingRow');
+  if (quietHoursRow) quietHoursRow.hidden = true;
+  if (DOM.quietHoursTimesRow) DOM.quietHoursTimesRow.hidden = true;
   if (DOM.reminderQuietHoursToggle) {
     DOM.reminderQuietHoursToggle.checked = Boolean(settings.quietHoursEnabled);
-  }
-  if (DOM.quietHoursTimesRow) {
-    DOM.quietHoursTimesRow.hidden = !settings.quietHoursEnabled;
   }
   if (DOM.quietHoursStartInput) {
     DOM.quietHoursStartInput.value = settings.quietHoursStart || '22:00';
@@ -3625,6 +3711,17 @@ function setupReminderSettingsModal() {
   if (DOM.quietHoursStartInput) DOM.quietHoursStartInput.addEventListener('change', handleQuietTimesChange);
   if (DOM.quietHoursEndInput) DOM.quietHoursEndInput.addEventListener('change', handleQuietTimesChange);
 
+  // Smooth scroll into view when More options is expanded
+  if (DOM.reminderMoreOptions) {
+    DOM.reminderMoreOptions.addEventListener('toggle', () => {
+      if (DOM.reminderMoreOptions.open) {
+        setTimeout(() => {
+          DOM.reminderMoreOptions.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }, 50);
+      }
+    });
+  }
+
   // Send Test Notification / Push button
   if (DOM.sendTestNotificationBtn) {
     DOM.sendTestNotificationBtn.addEventListener('click', async () => {
@@ -3710,7 +3807,7 @@ function setupReminderSettingsModal() {
       sendNotification(testCopy.heading, {
         body: `${testCopy.content}\n${progressSnippet}`,
         icon: './icon-192.png',
-        badge: './icon-192.png',
+        badge: './badge-72.png',
         tag: 'studentflow-test',
         renotify: true
       });
@@ -3979,7 +4076,7 @@ function checkAndNotifyDueTasks() {
         sendNotification(notifData.heading, {
           body: `${notifData.content}\n${progressBody}`,
           icon: './icon-192.png',
-          badge: './icon-192.png',
+          badge: './badge-72.png',
           tag: `${task.id}_soon`,
           data: { taskId: task.id },
           renotify: true
@@ -3998,7 +4095,7 @@ function checkAndNotifyDueTasks() {
         sendNotification(notifData.heading, {
           body: `${notifData.content}\n${progressBody}`,
           icon: './icon-192.png',
-          badge: './icon-192.png',
+          badge: './badge-72.png',
           tag: `${task.id}_overdue`,
           data: { taskId: task.id },
           renotify: true
@@ -4030,7 +4127,7 @@ function checkAndNotifyDueTasks() {
 function sendNotification(title, options = {}) {
   const defaultOptions = {
     icon: './icon-192.png',
-    badge: './icon-192.png',
+    badge: './badge-72.png',
     ...options
   };
 
@@ -4090,7 +4187,7 @@ function sendWelcomeNotificationIfFirstTime(settings) {
   sendNotification(heading, {
     body: content,
     icon: './icon-192.png',
-    badge: './icon-192.png',
+    badge: './badge-72.png',
     tag: 'studentflow-welcome',
     renotify: true
   });
