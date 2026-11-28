@@ -1005,10 +1005,32 @@ function reconcileScheduledPushes() {
       }
     }
 
-    // De-duplicate: if custom lead time equals 24h or 1h (or equals another enabled rung),
-    // do NOT schedule that rung twice. Each distinct send time per task gets one notification.
+    // Quiet Hours Adjustment for Background Pushes:
+    // When quiet hours are enabled and a rung's send time falls inside the quiet window:
+    // - Move that rung to the end of the quiet window if that moment is before task deadline, otherwise drop.
+    // - The "overdue" rung is never dropped; it is moved to the end of the quiet window.
+    const candidateRungs = [];
+    rawRungs.forEach(rung => {
+      if (settings.quietHoursEnabled && isQuietHours(settings, new Date(rung.timestamp))) {
+        const quietEnd = getQuietHoursShiftedTimestamp(settings, rung.timestamp);
+        if (rung.stage === 'overdue') {
+          if (quietEnd > now + 10000) {
+            candidateRungs.push({ ...rung, timestamp: quietEnd });
+          }
+        } else {
+          if (quietEnd < deadlineStamp && quietEnd > now + 10000) {
+            candidateRungs.push({ ...rung, timestamp: quietEnd });
+          }
+        }
+      } else {
+        candidateRungs.push(rung);
+      }
+    });
+
+    // De-duplicate: if custom lead time equals 24h or 1h (or rungs shifted to same quiet window end),
+    // collapse into one. Each distinct send time per task gets one notification.
     const desiredRungs = [];
-    rawRungs.forEach(candidate => {
+    candidateRungs.forEach(candidate => {
       const isDuplicate = desiredRungs.some(r => Math.abs(r.timestamp - candidate.timestamp) < 60000);
       if (!isDuplicate) {
         desiredRungs.push(candidate);
@@ -1186,6 +1208,47 @@ function isQuietHours(settings, now = new Date()) {
     return currentMinutes >= startMinutes || currentMinutes < endMinutes;
   }
   return false;
+}
+
+/**
+ * Return the shifted timestamp representing the end of quiet hours if the given timestamp
+ * falls inside the quiet hours window (supports ranges crossing midnight).
+ * If not in quiet hours, returns the original timestamp.
+ */
+function getQuietHoursShiftedTimestamp(settings, timestamp) {
+  if (!settings || !settings.quietHoursEnabled) return timestamp;
+  const date = new Date(timestamp);
+  if (!isQuietHours(settings, date)) return timestamp;
+
+  const startParts = (settings.quietHoursStart || '22:00').split(':').map(Number);
+  const endParts = (settings.quietHoursEnd || '08:00').split(':').map(Number);
+  if (startParts.length < 2 || endParts.length < 2 || startParts.some(isNaN) || endParts.some(isNaN)) {
+    return timestamp;
+  }
+
+  const endHours = endParts[0];
+  const endMinutes = endParts[1];
+
+  const currentMinutes = date.getHours() * 60 + date.getMinutes();
+  const startMinutes = startParts[0] * 60 + startParts[1];
+  const endMinutesTotal = endHours * 60 + endMinutes;
+
+  const endDate = new Date(date.getTime());
+  endDate.setHours(endHours, endMinutes, 0, 0);
+
+  if (startMinutes > endMinutesTotal) {
+    // Crosses midnight (e.g. 22:00 to 08:00)
+    if (currentMinutes >= startMinutes) {
+      // Time is between 22:00 and 23:59: quiet hours end on the NEXT calendar day
+      endDate.setDate(endDate.getDate() + 1);
+    } else {
+      // Time is between 00:00 and 08:00: quiet hours end on the SAME calendar day
+    }
+  } else if (startMinutes < endMinutesTotal) {
+    // Same day range (e.g. 13:00 to 15:00): quiet hours end on the SAME day
+  }
+
+  return endDate.getTime();
 }
 
 /* ==========================================================================
@@ -3292,8 +3355,8 @@ function syncReminderSettingsUI() {
   const presetsSection = document.getElementById('reminderPresetsSection');
   if (presetsSection) presetsSection.hidden = !pushConfigured;
 
-  if (DOM.sendTestBtnText) {
-    DOM.sendTestBtnText.textContent = pushConfigured ? 'Send test push' : 'Send test notification';
+  if (DOM.sendTestBtnText && DOM.sendTestBtnText.textContent !== 'Scheduling...') {
+    DOM.sendTestBtnText.textContent = 'Send test notification';
   }
 
   // Permission badge & blocked notice
@@ -3425,10 +3488,12 @@ function syncReminderSettingsUI() {
     DOM.reminderLangSelect.value = settings.lang || 'en';
   }
 
-  // Quiet Hours (kept hidden per user request; settings preserved)
+  // Quiet Hours (shown in More options)
   const quietHoursRow = document.getElementById('quietHoursSettingRow');
-  if (quietHoursRow) quietHoursRow.hidden = true;
-  if (DOM.quietHoursTimesRow) DOM.quietHoursTimesRow.hidden = true;
+  if (quietHoursRow) quietHoursRow.hidden = false;
+  if (DOM.quietHoursTimesRow) {
+    DOM.quietHoursTimesRow.hidden = !settings.quietHoursEnabled;
+  }
   if (DOM.reminderQuietHoursToggle) {
     DOM.reminderQuietHoursToggle.checked = Boolean(settings.quietHoursEnabled);
   }
@@ -3690,6 +3755,7 @@ function setupReminderSettingsModal() {
         DOM.quietHoursTimesRow.hidden = !settings.quietHoursEnabled;
       }
       saveSettings(settings);
+      reconcileScheduledPushes();
       checkAndNotifyDueTasks();
       showToast(settings.quietHoursEnabled ? 'Quiet hours enabled.' : 'Quiet hours turned off.', 'info');
     });
@@ -3705,6 +3771,7 @@ function setupReminderSettingsModal() {
       settings.quietHoursEnd = DOM.quietHoursEndInput.value;
     }
     saveSettings(settings);
+    reconcileScheduledPushes();
     checkAndNotifyDueTasks();
   };
 

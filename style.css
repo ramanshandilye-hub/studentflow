@@ -169,6 +169,10 @@
   padding: 0;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 html {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
   font-size: 16px;
@@ -2635,6 +2639,33 @@ body {
 .setting-btn {
   min-height: 40px;
   font-size: 0.88rem;
+}
+
+/* More options test notification subtle text link */
+.more-options-test-link-wrap {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0 4px 0;
+}
+
+.test-notif-link-btn {
+  background: none;
+  border: none;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-fast);
+}
+
+.test-notif-link-btn:hover,
+.test-notif-link-btn:focus-visible {
+  color: var(--primary);
+  outline: none;
 }
 
 /* OneSignal Privacy Note */
